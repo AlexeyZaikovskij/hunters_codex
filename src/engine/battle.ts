@@ -50,6 +50,31 @@ export const RULES = {
 
 export type AttackSide = 'front' | 'side' | 'back';
 
+/** Действие игрока для прогноза: умение или удар оружием. */
+export type ActionRef = { kind: 'skill'; id: string } | { kind: 'weapon' };
+
+/** Прогноз урона или лечения по одной цели (без случайного крита). */
+export interface ActionPreview {
+  unitId: string;
+  kind: 'damage' | 'heal';
+  damageType?: DamageType;
+  /** Урон после бонусов и сопротивления, до щита; для лечения — сколько вылечит. */
+  min: number;
+  max: number;
+  /** Дополнительный урон от столкновения при отталкивании. */
+  collision: number;
+  /** Сколько может поглотить щит цели. */
+  shield: number;
+  side: AttackSide;
+  /** Сопротивление цели, которое реально сработает, %. */
+  resist: number;
+  critChance: number;
+  /** Сколько здоровья цель потеряет (с учётом щита). */
+  hpLossMin: number;
+  hpLossMax: number;
+  lethal: 'no' | 'maybe' | 'sure';
+}
+
 export interface BattleOptions {
   grid: Grid;
   units: Unit[];
@@ -365,12 +390,7 @@ export class Battle {
     events.push({ type: 'log', text: `${unit.name}: ${skill.name}` });
 
     const area = this.areaCells(unit, skill, cell);
-    // Площадные умения бьют только врагов; точечные — того, кто стоит в клетке.
-    const targets = skill.area
-      ? area.map((p) => this.unitAt(p)).filter((u): u is Unit => !!u && u.team !== unit.team)
-      : skill.target === 'self'
-        ? [unit]
-        : [this.unitAt(cell)].filter((u): u is Unit => !!u);
+    const targets = this.skillTargets(unit, skill, cell);
     const castFrom = { ...unit.pos };
 
     for (const effect of skill.effects) {
@@ -602,6 +622,148 @@ export class Battle {
     return this.zones.filter((z) => z.cells.some((c) => samePos(c, p)));
   }
 
+  /** Кого задевает умение. Площадные бьют только врагов; точечные — того, кто стоит в клетке. */
+  private skillTargets(unit: Unit, skill: SkillDef, cell: Pos): Unit[] {
+    if (skill.area)
+      return this.areaCells(unit, skill, cell)
+        .map((p) => this.unitAt(p))
+        .filter((u): u is Unit => !!u && u.team !== unit.team);
+    if (skill.target === 'self') return [unit];
+    return [this.unitAt(cell)].filter((u): u is Unit => !!u);
+  }
+
+  /** Сколько клеток толчка цель не пройдёт (столкновение). Цель не двигается. */
+  private blockedPushCells(target: Unit, dir: Dir, distanceCells: number): number {
+    let p = target.pos;
+    for (let moved = 0; moved < distanceCells; moved++) {
+      const next = add(p, DIRS[dir]);
+      if (!this.isFree(next)) return distanceCells - moved;
+      p = next;
+    }
+    return 0;
+  }
+
+  /** Урон действия «на бумаге»: с характеристиками и усилениями героя, без учёта цели. */
+  actionDamageRange(
+    unit: Unit,
+    action: ActionRef,
+  ): { kind: 'damage' | 'heal'; min: number; max: number; damageType?: DamageType } | null {
+    if (action.kind === 'weapon') {
+      const w = unit.weapon;
+      if (!w) return null;
+      const { factor } = this.damageFactor(null, { attacker: unit, from: null, damageType: 'physical', scaling: w.scaling, isWeapon: true });
+      return { kind: 'damage', min: Math.round(w.min * factor), max: Math.round(w.max * factor), damageType: 'physical' };
+    }
+    const skill = this.skills[action.id];
+    for (const e of skill?.effects ?? []) {
+      if (e.type === 'damage') {
+        const { factor } = this.damageFactor(null, {
+          attacker: unit,
+          from: null,
+          damageType: e.damageType,
+          scaling: unit.team === 'player' ? 'intellect' : null,
+        });
+        return { kind: 'damage', min: Math.round(e.min * factor), max: Math.round(e.max * factor), damageType: e.damageType };
+      }
+      if (e.type === 'heal') {
+        const k = 1 + unit.stats.intellect / 100;
+        return { kind: 'heal', min: Math.round(e.min * k), max: Math.round(e.max * k) };
+      }
+    }
+    return null;
+  }
+
+  /** Прогноз по каждой цели, если применить действие по клетке. Бой не меняется. */
+  previewAction(unit: Unit, action: ActionRef, cell: Pos): ActionPreview[] {
+    const out: ActionPreview[] = [];
+    const finish = (target: Unit, p: Omit<ActionPreview, 'unitId' | 'hpLossMin' | 'hpLossMax' | 'lethal'>) => {
+      const hpLossMin = Math.max(0, p.min + p.collision - p.shield);
+      const hpLossMax = Math.max(0, p.max + p.collision - p.shield);
+      const lethal = p.kind === 'heal' ? 'no' : hpLossMin >= target.hp ? 'sure' : hpLossMax >= target.hp ? 'maybe' : 'no';
+      out.push({ unitId: target.id, ...p, hpLossMin, hpLossMax, lethal });
+    };
+    const shieldOf = (t: Unit) => t.statuses.find((s) => s.id === 'shield')?.value ?? 0;
+
+    if (action.kind === 'weapon') {
+      const w = unit.weapon;
+      const target = this.unitAt(cell);
+      if (!w || !target || !this.isValidWeaponTarget(unit, cell)) return out;
+      const f = this.damageFactor(target, {
+        attacker: unit,
+        from: unit.pos,
+        damageType: 'physical',
+        scaling: w.scaling,
+        isWeapon: true,
+        critBonus: w.critBonus,
+      });
+      let collision = 0;
+      if (w.push) {
+        const blocked = this.blockedPushCells(target, dirTowards(unit.pos, target.pos), w.push);
+        const base = RULES.weaponCollisionDamagePerCell * blocked * (1 + unit.stats.strength / 100);
+        collision = Math.round(base * this.damageFactor(target, { attacker: null, from: null, damageType: 'physical' }).factor);
+      }
+      finish(target, {
+        kind: 'damage',
+        damageType: 'physical',
+        min: Math.round(w.min * f.factor),
+        max: Math.round(w.max * f.factor),
+        collision,
+        shield: shieldOf(target),
+        side: f.side,
+        resist: f.resist,
+        critChance: f.critChance,
+      });
+      return out;
+    }
+
+    const skill = this.skills[action.id];
+    if (!skill || !this.isValidSkillTarget(unit, skill, cell)) return out;
+    for (const t of this.skillTargets(unit, skill, cell)) {
+      for (const e of skill.effects) {
+        if (e.type === 'damage') {
+          const f = this.damageFactor(t, {
+            attacker: unit,
+            from: unit.pos,
+            damageType: e.damageType,
+            scaling: unit.team === 'player' ? 'intellect' : null,
+            ignoreResist: e.ignoreResist,
+          });
+          const push = skill.effects.find((x) => x.type === 'push');
+          let collision = 0;
+          if (push?.type === 'push') {
+            const dir = lineDir(unit.pos, t.pos) ?? dirTowards(unit.pos, t.pos);
+            collision = Math.round(RULES.collisionDamagePerCell * this.blockedPushCells(t, dir, push.distance) * (1 + unit.stats.intellect / 100));
+          }
+          finish(t, {
+            kind: 'damage',
+            damageType: e.damageType,
+            min: Math.round(e.min * f.factor),
+            max: Math.round(e.max * f.factor),
+            collision,
+            shield: shieldOf(t),
+            side: f.side,
+            resist: f.resist,
+            critChance: f.critChance,
+          });
+        } else if (e.type === 'heal') {
+          const k = 1 + unit.stats.intellect / 100;
+          const room = t.maxHp - t.hp;
+          finish(t, {
+            kind: 'heal',
+            min: Math.min(room, Math.round(e.min * k)),
+            max: Math.min(room, Math.round(e.max * k)),
+            collision: 0,
+            shield: 0,
+            side: 'front',
+            resist: 0,
+            critChance: 0,
+          });
+        }
+      }
+    }
+    return out;
+  }
+
   /** Оружие, которым можно бить соседнюю клетку здесь и сейчас. */
   private meleeWeapon(unit: Unit): WeaponDef | null {
     const w = unit.weapon;
@@ -724,38 +886,48 @@ export class Battle {
       this.dealDamage(other, { attacker: null, from: null, base: Math.round(damage / 2), damageType, pure: !byWeapon, label: 'Столкновение' }, events);
   }
 
+  /**
+   * Множитель урона без крита: характеристика, усиления, Свет против Червоточин и нежити, сторона удара, сопротивление.
+   * Без цели (target = null) — только бонусы атакующего: «урон на бумаге» для подсказок.
+   */
+  private damageFactor(target: Unit | null, o: Omit<DamageOptions, 'base'>) {
+    let factor = 1;
+    let side: AttackSide = 'front';
+    let resist = 0;
+    let critChance = 0;
+    if (o.pure) return { factor, side, resist, critChance };
+    let bonus = 0;
+    const a = o.attacker;
+    if (a) {
+      if (o.scaling) bonus += a.stats[o.scaling];
+      bonus += this.statusValue(a, 'damageBoost');
+      if (o.damageType === 'fire') bonus += this.statusValue(a, 'fireBoost');
+      if (o.isWeapon) bonus += this.statusValue(a, 'weaponBoost');
+      critChance = RULES.baseCrit + a.stats.agility * RULES.critPerAgility + (o.critBonus ?? 0);
+    }
+    if (target && o.damageType === 'light' && target.tags.includes('wormhole')) bonus += RULES.lightVsWormhole;
+    factor *= 1 + bonus / 100;
+    if (!target) return { factor, side, resist, critChance };
+    if (o.damageType === 'light' && target.tags.includes('undead')) factor *= RULES.lightVsUndead;
+    if (o.from) {
+      side = this.attackSide(o.from, target);
+      if (side === 'back') factor *= RULES.backBonus;
+      if (side === 'side') factor *= RULES.sideBonus;
+    }
+    resist = Math.min(RULES.maxResist, target.resist[o.damageType] ?? 0) * (1 - (o.ignoreResist ?? 0));
+    factor *= 1 - resist / 100;
+    return { factor, side, resist, critChance };
+  }
+
   private dealDamage(target: Unit, o: DamageOptions, events: BattleEvent[]) {
     if (!target.alive) return;
-    let amount = o.base;
+    const f = this.damageFactor(target, o);
+    let amount = o.base * f.factor;
     let crit = false;
-    let side: AttackSide = 'front';
-    if (!o.pure) {
-      let bonus = 0;
-      const a = o.attacker;
-      if (a) {
-        if (o.scaling) bonus += a.stats[o.scaling];
-        bonus += this.statusValue(a, 'damageBoost');
-        if (o.damageType === 'fire') bonus += this.statusValue(a, 'fireBoost');
-        if (o.isWeapon) bonus += this.statusValue(a, 'weaponBoost');
-      }
-      if (o.damageType === 'light' && target.tags.includes('wormhole')) bonus += RULES.lightVsWormhole;
-      amount *= 1 + bonus / 100;
-      if (o.damageType === 'light' && target.tags.includes('undead')) amount *= RULES.lightVsUndead;
-
-      if (o.from) {
-        side = this.attackSide(o.from, target);
-        if (side === 'back') amount *= RULES.backBonus;
-        if (side === 'side') amount *= RULES.sideBonus;
-      }
-      if (a) {
-        const critChance = RULES.baseCrit + a.stats.agility * RULES.critPerAgility + (o.critBonus ?? 0);
-        if (this.rng.chance(critChance)) {
-          crit = true;
-          amount *= RULES.critMultiplier;
-        }
-      }
-      const resist = Math.min(RULES.maxResist, target.resist[o.damageType] ?? 0) * (1 - (o.ignoreResist ?? 0));
-      amount *= 1 - resist / 100;
+    const side = f.side;
+    if (!o.pure && o.attacker && this.rng.chance(f.critChance)) {
+      crit = true;
+      amount *= RULES.critMultiplier;
     }
     amount = Math.max(0, Math.round(amount));
 

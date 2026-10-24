@@ -2,8 +2,59 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { BattleSession, Mode } from '../game/session';
 import { PhaserView } from '../game/PhaserView';
 import { SKILLS, SCHOOL_NAMES } from '../data/skills';
-import { RULES } from '../engine/battle';
-import type { Status, StatusId, Unit } from '../engine/types';
+import { RULES, type ActionPreview, type Battle } from '../engine/battle';
+import type { DamageType, Status, StatusId, Unit } from '../engine/types';
+
+// Физический урон без подписи: «12–15 урона».
+const DAMAGE_NAMES: Record<DamageType, string> = {
+  physical: '',
+  fire: 'огнём',
+  light: 'светом',
+  blood: 'кровью',
+  space: 'пространством',
+};
+
+/** «18–22 урона огнём» с учётом характеристик и усилений героя. */
+function damageText(battle: Battle, hero: Unit, action: Parameters<Battle['actionDamageRange']>[1]): string {
+  const r = battle.actionDamageRange(hero, action);
+  if (!r) return '';
+  const range = r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`;
+  return r.kind === 'heal' ? `лечит ${range}` : `${range} урона${r.damageType && DAMAGE_NAMES[r.damageType] ? ` ${DAMAGE_NAMES[r.damageType]}` : ''}`;
+}
+
+function PreviewBlock({ p, target }: { p: ActionPreview; target: Unit }) {
+  const range = (a: number, b: number) => (a === b ? `${a}` : `${a}–${b}`);
+  if (p.kind === 'heal')
+    return (
+      <div className="preview heal">
+        <div className="preview-main">+{range(p.min, p.max)} здоровья</div>
+      </div>
+    );
+  const notes = [
+    p.side === 'back' && `в спину ×${RULES.backBonus}`,
+    p.side === 'side' && `сбоку ×${RULES.sideBonus}`,
+    p.resist > 0 && `сопротивление ${Math.round(p.resist)}%`,
+    p.resist < 0 && `уязвимость ${Math.round(-p.resist)}%`,
+    p.collision > 0 && `столкновение +${p.collision}`,
+    p.shield > 0 && `щит поглотит до ${p.shield}`,
+    p.critChance > 0 && `крит ${Math.round(p.critChance * 100)}% (×${RULES.critMultiplier})`,
+  ].filter(Boolean);
+  return (
+    <div className={`preview lethal-${p.lethal}`}>
+      <div className="card-label">Прогноз</div>
+      <div className="preview-main">
+        −{range(p.hpLossMin, p.hpLossMax)} здоровья
+        {p.lethal === 'sure' && <span className="tag kill">добьёт</span>}
+        {p.lethal === 'maybe' && <span className="tag kill">может добить</span>}
+      </div>
+      <div className="preview-sub">
+        {range(p.min, p.max)} урона{p.damageType && DAMAGE_NAMES[p.damageType] ? ` ${DAMAGE_NAMES[p.damageType]}` : ''} · осталось{' '}
+        {target.hp}
+      </div>
+      {notes.length > 0 && <div className="preview-notes">{notes.join(' · ')}</div>}
+    </div>
+  );
+}
 
 const STATUS_NAMES: Record<StatusId, string> = {
   burn: 'Горение',
@@ -67,7 +118,7 @@ function Statuses({ statuses }: { statuses: Status[] }) {
   );
 }
 
-function UnitCard({ unit, title }: { unit: Unit; title?: string }) {
+function UnitCard({ unit, title, preview }: { unit: Unit; title?: string; preview?: ActionPreview }) {
   const resists = Object.entries(unit.resist).filter(([, v]) => v);
   return (
     <div className={`card unit-card team-${unit.team}`}>
@@ -103,6 +154,7 @@ function UnitCard({ unit, title }: { unit: Unit; title?: string }) {
         </div>
       )}
       <Statuses statuses={unit.statuses} />
+      {preview && <PreviewBlock p={preview} target={unit} />}
     </div>
   );
 }
@@ -166,6 +218,9 @@ export function BattleScreen({
   const hovered = hover ? battle.unitAt(hover) : undefined;
   const isActive = (m: Mode) => JSON.stringify(m) === JSON.stringify(mode);
   const myTurn = session.isPlayerTurn;
+  // Прогноз по цели под курсором, когда выбрано умение или оружие.
+  const previews = myTurn && hover && mode.kind !== 'move' ? battle.previewAction(hero, mode, hover) : [];
+  const hoveredPreview = hovered ? previews.find((p) => p.unitId === hovered.id) : undefined;
   const weapon = hero.weapon!;
   const weaponErr = battle.weaponError(hero);
 
@@ -208,7 +263,9 @@ export function BattleScreen({
               ))}
           </ol>
         </div>
-        {hovered && hovered !== hero && <UnitCard unit={hovered} title="Под курсором" />}
+        {hovered && (hovered !== hero || hoveredPreview) && (
+          <UnitCard unit={hovered} title="Под курсором" preview={hoveredPreview} />
+        )}
       </aside>
 
       <main className="center">
@@ -271,7 +328,12 @@ export function BattleScreen({
                 onMouseEnter={() =>
                   setInfo({
                     title: `${s.name} · ${SCHOOL_NAMES[s.school]}`,
-                    meta: `${s.apCost} ОД · ${s.manaCost} маны${hpCost} · ${range}${s.cooldown ? ` · перезарядка ${s.cooldown}` : ''}${s.needsLos ? '' : ' · без обзора'}`,
+                    meta: [
+                      damageText(battle, hero, { kind: 'skill', id }),
+                      `${s.apCost} ОД · ${s.manaCost} маны${hpCost} · ${range}${s.cooldown ? ` · перезарядка ${s.cooldown}` : ''}${s.needsLos ? '' : ' · без обзора'}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · '),
                     text: err ? `${s.description} (${err})` : s.description,
                   })
                 }
@@ -294,7 +356,7 @@ export function BattleScreen({
             onMouseEnter={() =>
               setInfo({
                 title: `${weapon.name} · оружие`,
-                meta: `${weapon.apCost} ОД · ${weapon.range[0]}–${weapon.range[1]} · ${weapon.min}–${weapon.max} урона · не больше ${RULES.maxWeaponAttacksPerTurn} ударов за ход`,
+                meta: `${damageText(battle, hero, { kind: 'weapon' })} · ${weapon.apCost} ОД · ${weapon.range[0]}–${weapon.range[1]} · не больше ${RULES.maxWeaponAttacksPerTurn} ударов за ход`,
                 text: weaponErr ? `${weapon.description} (${weaponErr})` : weapon.description,
               })
             }

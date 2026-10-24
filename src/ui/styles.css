@@ -727,3 +727,41 @@ button {
     max-height: 300px;
   }
 }
+
+/* Прогноз урона по цели под курсором */
+.preview {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.preview-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: Rubik, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.preview.heal .preview-main {
+  color: #7cf0b2;
+}
+
+.preview.lethal-sure .preview-main,
+.preview.lethal-maybe .preview-main {
+  color: var(--enemy, #ff5d5d);
+}
+
+.tag.kill {
+  background: rgba(255, 93, 93, 0.18);
+  color: #ff5d5d;
+}
+
+.preview-sub,
+.preview-notes {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}

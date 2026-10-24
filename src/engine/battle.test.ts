@@ -115,6 +115,38 @@ describe('Battle', () => {
     expect(mob.hp).toBeLessThan(hpBefore);
   });
 
+  it('damage preview matches the real hit and accounts for resistance and shield', () => {
+    const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 1, y: 2 });
+    const mob = createMonster('gnawer', 'm1', { x: 4, y: 2 });
+    const guard = createMonster('bone_guard', 'm2', { x: 2, y: 2 });
+    guard.facing = 'left';
+    mob.initiative = 0;
+    guard.initiative = 0;
+    const battle = setup([hero, mob, guard]);
+
+    // На бумаге: 16–20 × (1 + 10% Интеллекта).
+    expect(battle.actionDamageRange(hero, { kind: 'skill', id: 'fire_bolt' })).toMatchObject({ min: 18, max: 22 });
+
+    // Меч по стражу: физическое сопротивление 20% режет урон.
+    const [vsGuard] = battle.previewAction(hero, { kind: 'weapon' }, guard.pos);
+    expect(vsGuard.resist).toBe(20);
+    expect(vsGuard.max).toBeLessThan(battle.actionDamageRange(hero, { kind: 'weapon' })!.max);
+
+    // Щит уменьшает потерю здоровья, но не сам урон.
+    guard.statuses.push({ id: 'shield', duration: 2, value: 10, sourceId: 'x' });
+    const [shielded] = battle.previewAction(hero, { kind: 'weapon' }, guard.pos);
+    expect(shielded.hpLossMax).toBe(vsGuard.max - 10);
+
+    // Реальный удар попадает в прогноз (если не крит).
+    const [p] = battle.previewAction(hero, { kind: 'weapon' }, guard.pos);
+    const res = battle.weaponAttack('hero', guard.pos);
+    const hit = res.events.find((e) => e.type === 'damage' && e.unitId === 'm2');
+    if (hit?.type === 'damage' && !hit.crit) {
+      expect(hit.amount + hit.absorbed).toBeGreaterThanOrEqual(p.min);
+      expect(hit.amount + hit.absorbed).toBeLessThanOrEqual(p.max);
+    }
+  });
+
   it('obstacles block line of sight', () => {
     const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 0, y: 0 });
     const mob = createMonster('gnawer', 'm1', { x: 4, y: 0 });

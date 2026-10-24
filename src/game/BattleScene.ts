@@ -62,6 +62,8 @@ export class BattleScene extends Phaser.Scene {
   private overlay!: Phaser.GameObjects.Graphics;
   private zonesLayer!: Phaser.GameObjects.Graphics;
   private views = new Map<string, UnitView>();
+  /** Подписи прогноза урона над целями; пересоздаются при каждой перерисовке подсветки. */
+  private previewLayer!: Phaser.GameObjects.Container;
   private unsubscribe?: () => void;
 
   constructor() {
@@ -77,6 +79,7 @@ export class BattleScene extends Phaser.Scene {
     this.zonesLayer = this.add.graphics();
     this.overlay = this.add.graphics();
     for (const u of this.session.battle.units) this.createUnitView(u);
+    this.previewLayer = this.add.container(0, 0).setDepth(20);
 
     this.input.mouse?.disableContextMenu();
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.session.setHover(this.cellAt(p)));
@@ -178,6 +181,7 @@ export class BattleScene extends Phaser.Scene {
     const { battle, mode, hover } = this.session;
     const o = this.overlay;
     o.clear();
+    this.previewLayer.removeAll(true);
 
     this.zonesLayer.clear();
     for (const z of battle.zones) {
@@ -224,6 +228,7 @@ export class BattleScene extends Phaser.Scene {
       if (hover && validKeys.has(key(hover))) {
         fill(battle.areaCells(hero, skill, hover), COLORS.area, 0.45);
         outline([hover], COLORS.target);
+        this.drawPreview(hover);
       }
       return;
     }
@@ -233,7 +238,34 @@ export class BattleScene extends Phaser.Scene {
     const valid = cells.filter((c) => battle.isValidWeaponTarget(hero, c));
     fill(cells, COLORS.range, 0.1);
     fill(valid, COLORS.target, 0.3);
-    if (hover && valid.some((c) => samePos(c, hover))) outline([hover], COLORS.target);
+    if (hover && valid.some((c) => samePos(c, hover))) {
+      outline([hover], COLORS.target);
+      this.drawPreview(hover);
+    }
+  }
+
+  /** Над каждой целью — сколько здоровья она потеряет (или получит). */
+  private drawPreview(cell: Pos) {
+    const { battle, mode, hero } = this.session;
+    if (mode.kind === 'move') return;
+    for (const p of battle.previewAction(hero, mode, cell)) {
+      const u = battle.unit(p.unitId);
+      const range = p.kind === 'heal' ? [p.min, p.max] : [p.hpLossMin, p.hpLossMax];
+      const value = range[0] === range[1] ? `${range[0]}` : `${range[0]}–${range[1]}`;
+      const text = p.kind === 'heal' ? `+${value}` : `−${value}${p.lethal === 'sure' ? ' ☠' : p.lethal === 'maybe' ? ' ☠?' : ''}`;
+      const c = center(u.pos);
+      const label = this.add
+        .text(c.x, c.y - CELL / 2 - 4, text, {
+          fontFamily: 'Rubik, sans-serif',
+          fontSize: '15px',
+          fontStyle: 'bold',
+          color: p.kind === 'heal' ? '#7cf0b2' : p.lethal === 'no' ? '#ffd84a' : '#ff5d5d',
+          stroke: '#0b0d14',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5, 1);
+      this.previewLayer.add(label);
+    }
   }
 
   // ───────────── Анимация событий ─────────────
