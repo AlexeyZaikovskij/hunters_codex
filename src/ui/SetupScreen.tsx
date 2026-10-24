@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { checkServer, type ServerStatus } from '../lib/supabase';
 import type { Affinity, SessionSetup } from '../game/session';
 import { SKILLS, SCHOOL_SKILLS } from '../data/skills';
 import { WEAPONS } from '../data/weapons';
@@ -18,12 +19,28 @@ export function SetupScreen({ onStart }: { onStart: (s: SessionSetup) => void })
   const [location, setLocation] = useState<Location>('wormhole');
   const weapon = WEAPONS.find((w) => w.id === weaponId)!;
   const weaponBlocked = !!weapon.technology && location === 'wormhole';
+  const [server, setServer] = useState<ServerStatus | 'checking'>('checking');
+
+  useEffect(() => {
+    checkServer().then(setServer, () => setServer('error'));
+  }, []);
 
   return (
     <div className="setup">
       <header className="setup-head">
         <h1>Atrium</h1>
         <p>Прототип боя · {TRAINING_WORMHOLE.name}</p>
+        <p className={`server server-${server}`}>
+          Сервер:{' '}
+          {
+            {
+              checking: 'проверка…',
+              online: 'подключён',
+              offline: 'не настроен (игра работает офлайн)',
+              error: 'нет связи',
+            }[server]
+          }
+        </p>
       </header>
 
       <section>

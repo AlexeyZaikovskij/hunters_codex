@@ -3,3 +3,9 @@ dist/
 *.log
 .vite/
 .DS_Store
+
+# Ключи и локальные настройки
+.env
+.env.local
+.env.*.local
+.vercel

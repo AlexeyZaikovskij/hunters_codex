@@ -1,0 +1,25 @@
+name: CI
+
+# Проверка типов и тесты на каждый пуш в dev/main и на pull request.
+# Vercel деплоит независимо от результата — этот workflow не блокирует деплой,
+# а показывает красный крестик у коммита, если что-то сломалось.
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Тесты движка не ходят ни в Supabase, ни в сеть.
+      - run: npm test
