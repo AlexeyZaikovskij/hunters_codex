@@ -13,6 +13,8 @@ import { getArtStyle, type ArtStyle } from './art';
 import { paintBoard, paintObstacle } from './painted';
 import { isoProjection, topDownProjection, type Projection } from './projection';
 import { UNIT_ART, svgDataUrl } from './painted-units';
+import type { UnitSheet } from './models3d';
+import { LOOPED_ANIMS, type ModelAnim } from '../data/models';
 
 // Отрисовка поля боя. Логики боя здесь нет: сцена только показывает состояние и проигрывает события.
 
@@ -71,12 +73,27 @@ interface UnitView {
   /** Белая вспышка при попадании. */
   flash: (on: boolean) => void;
   /** Спрайт смотрит влево или вправо; вверх/вниз показывает только треугольник. */
-  sprite?: Phaser.GameObjects.Image;
+  sprite?: Phaser.GameObjects.Image | Phaser.GameObjects.Sprite;
   facing: Phaser.GameObjects.Triangle;
   hpBar: Phaser.GameObjects.Rectangle;
   shieldBar: Phaser.GameObjects.Rectangle;
   ring: Phaser.GameObjects.Shape;
+  /** Высота полоски здоровья над точкой клетки — над ней же подписи и всплывающие числа. */
+  barsY: number;
+  /** 3D-модель: анимации по направлениям. */
+  model?: ModelState;
 }
+
+interface ModelState {
+  kind: string;
+  sheet: UnitSheet;
+  dir: Dir;
+  anim: ModelAnim;
+}
+
+/** Масштаб кадров 3D-моделей на поле: человек ростом ~75 px. */
+const MODEL_SCALE = 0.7;
+const modelAnimKey = (kind: string, anim: ModelAnim, dir: Dir) => `${kind}:${anim}:${dir}`;
 
 /** Иконки грузятся белыми, нужный цвет даёт tint. */
 const iconKey = (name: string) => `icon:${name}`;
@@ -103,8 +120,12 @@ export class BattleScene extends Phaser.Scene {
     super('battle');
   }
 
-  init(data: { session: BattleSession }) {
+  /** Спрайты 3D-моделей (если выбраны и успели отрендериться). */
+  private sheets: Record<string, UnitSheet> = {};
+
+  init(data: { session: BattleSession; sheets?: Record<string, UnitSheet> }) {
     this.session = data.session;
+    this.sheets = data.sheets ?? {};
     this.art = getArtStyle();
     this.proj = makeProjection(this.art, this.session.battle.grid);
   }
@@ -124,6 +145,7 @@ export class BattleScene extends Phaser.Scene {
     this.drawBoard();
     this.zonesLayer = this.add.graphics();
     this.overlay = this.add.graphics();
+    this.registerModelSheets();
     for (const u of this.session.battle.units) this.createUnitView(u);
     this.previewLayer = this.add.container(0, 0).setDepth(TOP_DEPTH);
 
@@ -213,7 +235,60 @@ export class BattleScene extends Phaser.Scene {
 
   // ───────────── Юниты ─────────────
 
+  /** Кадры моделей → текстуры и анимации Phaser: `вид:анимация:направление`. */
+  private registerModelSheets() {
+    for (const [kind, sheet] of Object.entries(this.sheets)) {
+      const texKey = `model:${kind}`;
+      const tex = this.textures.addCanvas(texKey, sheet.canvas)!;
+      const fs = sheet.frameSize;
+      const columns = sheet.canvas.width / fs;
+      const total = (sheet.canvas.width / fs) * (sheet.canvas.height / fs);
+      for (let i = 0; i < total; i++) tex.add(i, 0, (i % columns) * fs, Math.floor(i / columns) * fs, fs, fs);
+      for (const [anim, byDir] of Object.entries(sheet.frames) as [ModelAnim, Record<Dir, { start: number; count: number }>][])
+        for (const [dir, f] of Object.entries(byDir) as [Dir, { start: number; count: number }][]) {
+          const duration = sheet.durations[anim] ?? 1;
+          this.anims.create({
+            key: modelAnimKey(kind, anim, dir),
+            frames: Array.from({ length: f.count }, (_, i) => ({ key: texKey, frame: f.start + i })),
+            // Родная скорость анимации, но не медленнее 6 и не быстрее 18 кадров в секунду.
+            frameRate: Phaser.Math.Clamp(f.count / duration, 6, 18),
+            repeat: LOOPED_ANIMS[anim] ? -1 : 0,
+          });
+        }
+    }
+  }
+
+  /** Проиграть анимацию модели (нет такой — стоять в покое). Одноразовые возвращаются в покой сами. */
+  private act(view: UnitView | undefined, anim: ModelAnim) {
+    const m = view?.model;
+    if (!view || !m || !(view.sprite instanceof Phaser.GameObjects.Sprite)) return 0;
+    const chosen: ModelAnim = m.sheet.frames[anim] ? anim : anim === 'cast' && m.sheet.frames.attack ? 'attack' : 'idle';
+    m.anim = chosen;
+    const sprite = view.sprite;
+    sprite.play(modelAnimKey(m.kind, chosen, m.dir));
+    if (!LOOPED_ANIMS[chosen] && chosen !== 'death')
+      sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        if (m.anim === chosen) this.act(view, 'idle');
+      });
+    // Сколько ждать до «момента удара» — середина одноразовой анимации.
+    const frames = m.sheet.frames[chosen]?.[m.dir]?.count ?? 0;
+    const rate = Phaser.Math.Clamp(frames / (m.sheet.durations[chosen] ?? 1), 6, 18);
+    return LOOPED_ANIMS[chosen] ? 0 : (frames / rate) * 1000;
+  }
+
   private createUnitView(u: Unit) {
+    const sheet = u.kind ? this.sheets[u.kind] : undefined;
+    if (sheet && u.kind) {
+      const kind = u.kind;
+      const idle = sheet.frames.idle![u.facing];
+      const model: ModelState = { kind, sheet, dir: u.facing, anim: 'idle' };
+      return this.createSpriteView(
+        u,
+        (s) => s.sprite(0, 6, `model:${kind}`, idle.start).setOrigin(sheet.origin.x, sheet.origin.y).setScale(MODEL_SCALE),
+        -96,
+        { model, groundY: 6 },
+      );
+    }
     if (this.art !== 'pixel' && u.kind && UNIT_ART[u.kind])
       return this.createSpriteView(u, (s) => s.image(0, -12, artKey(u.kind!)).setDisplaySize(80, 80), -46);
     const ref = u.kind ? UNIT_SPRITES[u.kind] : undefined;
@@ -238,7 +313,7 @@ export class BattleScene extends Phaser.Scene {
     const container = this.add.container(x, y, [ring, shadow, team, body, shine, glyph, facing, hpBack, hpBar, shieldBar]);
     container.setDepth(10 + this.proj.depth(u.pos));
     const flash = (on: boolean) => body.setFillStyle(on ? 0xffffff : u.color);
-    const view = { container, flash, facing, hpBar, shieldBar, ring };
+    const view = { container, flash, facing, hpBar, shieldBar, ring, barsY: -31 };
     this.views.set(u.id, view);
     this.setFacing(view, u.facing);
   }
@@ -246,13 +321,15 @@ export class BattleScene extends Phaser.Scene {
   /** Персонаж-картинка: овал команды под ногами, спрайт, полоски здоровья и щита сверху. */
   private createSpriteView(
     u: Unit,
-    makeSprite: (add: Phaser.GameObjects.GameObjectFactory) => Phaser.GameObjects.Image,
+    makeSprite: (add: Phaser.GameObjects.GameObjectFactory) => Phaser.GameObjects.Image | Phaser.GameObjects.Sprite,
     barsY = -36,
+    opts: { model?: ModelState; groundY?: number } = {},
   ) {
     const { x, y } = this.proj.center(u.pos);
     const teamColor = u.team === 'player' ? COLORS.player : COLORS.enemy;
-    const ring = this.add.ellipse(0, 22, 58, 22).setStrokeStyle(3, COLORS.current).setVisible(false);
-    const base = this.add.ellipse(0, 22, 50, 16, teamColor, 0.35).setStrokeStyle(2, teamColor, 0.9);
+    const groundY = opts.groundY ?? 22;
+    const ring = this.add.ellipse(0, groundY, 58, 22).setStrokeStyle(3, COLORS.current).setVisible(false);
+    const base = this.add.ellipse(0, groundY, 50, 16, teamColor, 0.35).setStrokeStyle(2, teamColor, 0.9);
     const sprite = makeSprite(this.add);
     const facing = this.add.triangle(0, 0, 0, -5, 0, 5, 8, 0, teamColor).setOrigin(0, 0.5);
     const hpBack = this.add.rectangle(-20, barsY, 40, 6, 0x000000, 0.7).setOrigin(0, 0.5);
@@ -261,13 +338,23 @@ export class BattleScene extends Phaser.Scene {
     const container = this.add.container(x, y, [ring, base, facing, sprite, hpBack, hpBar, shieldBar]);
     container.setDepth(10 + this.proj.depth(u.pos));
     const flash = (on: boolean) => (on ? sprite.setTintFill(0xffffff) : sprite.clearTint());
-    const view = { container, flash, sprite, facing, hpBar, shieldBar, ring };
+    const view: UnitView = { container, flash, sprite, facing, hpBar, shieldBar, ring, barsY, model: opts.model };
     this.views.set(u.id, view);
     this.setFacing(view, u.facing);
   }
 
   private setFacing(view: UnitView, dir: Dir) {
     const angle = this.proj.angle(dir);
+    if (view.model) {
+      // Модель отрендерена во всех 4 направлениях: просто переключаем анимацию на нужное.
+      const m = view.model;
+      view.facing.setPosition(Math.cos(angle) * 28, 6 + Math.sin(angle) * 11).setRotation(angle);
+      if (m.dir !== dir || !(view.sprite as Phaser.GameObjects.Sprite).anims.isPlaying) {
+        m.dir = dir;
+        if (LOOPED_ANIMS[m.anim]) (view.sprite as Phaser.GameObjects.Sprite).play(modelAnimKey(m.kind, m.anim, dir), true);
+      }
+      return;
+    }
     if (view.sprite) {
       // Треугольник у ног, на краю овала команды.
       view.facing.setPosition(Math.cos(angle) * 28, 22 + Math.sin(angle) * 11).setRotation(angle);
@@ -379,7 +466,7 @@ export class BattleScene extends Phaser.Scene {
       const text = p.kind === 'heal' ? `+${value}` : `−${value}${p.lethal === 'sure' ? ' ☠' : p.lethal === 'maybe' ? ' ☠?' : ''}`;
       const c = this.proj.center(u.pos);
       const label = this.add
-        .text(c.x, c.y - (this.art === 'pixel' ? 46 : 58), text, {
+        .text(c.x, c.y + (this.views.get(u.id)?.barsY ?? -36) - 10, text, {
           fontFamily: 'Rubik, sans-serif',
           fontSize: '15px',
           fontStyle: 'bold',
@@ -426,7 +513,7 @@ export class BattleScene extends Phaser.Scene {
     const view = this.views.get(unitId);
     if (!view) return;
     const t = this.add
-      .text(view.container.x + Phaser.Math.Between(-8, 8), view.container.y - 30, text, {
+      .text(view.container.x + Phaser.Math.Between(-8, 8), view.container.y + view.barsY + 6, text, {
         fontFamily: 'Rubik, sans-serif',
         fontSize: big ? '24px' : '18px',
         fontStyle: 'bold',
@@ -453,6 +540,7 @@ export class BattleScene extends Phaser.Scene {
           break;
         case 'move':
           if (!view) break;
+          this.act(view, 'walk');
           for (let i = 0; i < e.path.length; i++) {
             const step = e.path[i];
             const prev = i === 0 ? null : e.path[i - 1];
@@ -465,6 +553,7 @@ export class BattleScene extends Phaser.Scene {
             await this.tween({ targets: view.container, x: c.x, y: c.y, duration: 140, ease: 'Sine.easeInOut' });
             view.container.setDepth(10 + this.proj.depth(step));
           }
+          this.act(view, 'idle');
           break;
         case 'teleport':
           if (!view) break;
@@ -489,6 +578,9 @@ export class BattleScene extends Phaser.Scene {
           const school = e.skillId === 'weapon' ? 'weapon' : SKILLS[e.skillId]?.school;
           const color = SCHOOL_COLORS[school ?? 'weapon'];
           if (view) {
+            // Модель замахивается или колдует; снаряд вылетает на середине движения.
+            const windup = this.act(view, e.skillId === 'weapon' ? 'attack' : 'cast');
+            if (windup) await this.wait(Math.min(450, windup * 0.5));
             const caster = view.container;
             const to = this.proj.center(e.target);
             this.popIcon(caster.x, caster.y, this.castIcon(e.unitId, e.skillId), color);
@@ -508,6 +600,7 @@ export class BattleScene extends Phaser.Scene {
           if (e.absorbed > 0) this.float(e.unitId, `🛡${e.absorbed}`, '#9fd8ff');
           if (e.amount > 0 || e.absorbed === 0) this.float(e.unitId, `−${e.amount}${e.crit ? '!' : ''}`, DAMAGE_COLORS[e.damageType], e.crit);
           view.flash(true);
+          if (battle.unit(e.unitId).alive) this.act(view, 'hit');
           await this.wait(90);
           view.flash(false);
           await this.wait(140);
@@ -523,7 +616,11 @@ export class BattleScene extends Phaser.Scene {
           await this.wait(150);
           break;
         case 'death':
-          if (view) await this.tween({ targets: view.container, alpha: 0, scale: 0.5, duration: 300 });
+          if (view?.model) {
+            // Модель падает, потом тает.
+            await this.wait(Math.min(1200, this.act(view, 'death')));
+            await this.tween({ targets: view.container, alpha: 0, duration: 400 });
+          } else if (view) await this.tween({ targets: view.container, alpha: 0, scale: 0.5, duration: 300 });
           break;
         case 'log':
           break;

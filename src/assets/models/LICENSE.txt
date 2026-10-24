@@ -1,0 +1,14 @@
+3D-модели персонажей — все под лицензией Creative Commons Zero (CC0):
+http://creativecommons.org/publicdomain/zero/1.0/
+Можно использовать в коммерческих проектах без указания авторства (авторы всё равно указаны в игре).
+
+mage.glb             — KayKit Character Pack: Adventurers 1.0, Mage. Kay Lousberg, www.kaylousberg.com
+                       https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+skeleton_warrior.glb,
+skeleton_blade.glb,
+skeleton_shield.glb  — KayKit Character Pack: Skeletons 1.0 (Skeleton_Warrior, Skeleton_Blade, Skeleton_Shield_Small_A).
+                       Kay Lousberg, https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0
+spider.glb           — Spider, Quaternius (quaternius.com), https://poly.pizza/m/yRYJiAJyiM
+spiky_blob.glb       — Green Spiky Blob, Quaternius (quaternius.com), https://poly.pizza/m/IoWG5F9WUc
+
+Файлы урезаны до используемых анимаций скриптом scripts/prune-models.ts (npm run models -- <папка с исходниками>).

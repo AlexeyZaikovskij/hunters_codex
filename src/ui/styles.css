@@ -360,6 +360,13 @@ button {
   height: 100%;
 }
 
+.board-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted, #9aa3b8);
+}
+
 .board canvas {
   border-radius: var(--radius);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
