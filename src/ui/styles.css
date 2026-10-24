@@ -548,6 +548,7 @@ button {
   justify-content: space-between;
   text-align: left;
   transition: transform 0.1s, background 0.1s;
+  overflow: hidden;
 }
 
 .slot:hover {
@@ -598,8 +599,8 @@ button {
 
 .slot .key {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  bottom: 6px;
+  right: 8px;
   font-size: 10px;
   color: var(--muted);
 }
@@ -608,7 +609,6 @@ button {
   font-weight: 600;
   font-size: 12px;
   line-height: 1.2;
-  padding-right: 10px;
 }
 
 .slot-cost {

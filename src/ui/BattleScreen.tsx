@@ -310,7 +310,7 @@ export function BattleScreen({
             onMouseLeave={() => setInfo(null)}
           >
             <span className="key">F</span>
-            <span className="slot-name">Сосредоточиться</span>
+            <span className="slot-name">Сосредо&shy;точиться</span>
             <span className="slot-cost">{RULES.focusAp} ОД</span>
           </button>
           <button className="slot end-turn" disabled={!myTurn} onClick={() => void session.endTurn()}>
