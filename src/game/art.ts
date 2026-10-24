@@ -17,7 +17,7 @@ export function getArtStyle(): ArtStyle {
   } catch {
     // Хранилище недоступно (приватный режим) — берём по умолчанию.
   }
-  return 'painted';
+  return 'iso';
 }
 
 export function setArtStyle(style: ArtStyle) {
