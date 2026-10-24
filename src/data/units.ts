@@ -61,6 +61,8 @@ interface MonsterDef {
   glyph: string;
   color: number;
   hp: number;
+  /** Монстры получают меньше ОД, чем герой: одна атака за ход, иначе толпа сносит героя за пару раундов. */
+  ap: number;
   mp: number;
   initiative: number;
   skills: string[];
@@ -74,7 +76,8 @@ export const MONSTERS: Record<string, MonsterDef> = {
     name: 'Червеглот',
     glyph: 'Ч',
     color: 0xc0563a,
-    hp: 60,
+    hp: 55,
+    ap: 4,
     mp: 3,
     initiative: 12,
     skills: ['m_bite'],
@@ -87,6 +90,7 @@ export const MONSTERS: Record<string, MonsterDef> = {
     glyph: 'И',
     color: 0x8bbf3a,
     hp: 40,
+    ap: 4,
     mp: 3,
     initiative: 15,
     skills: ['m_spine'],
@@ -98,7 +102,8 @@ export const MONSTERS: Record<string, MonsterDef> = {
     name: 'Костяной страж',
     glyph: 'К',
     color: 0xd9d2b6,
-    hp: 75,
+    hp: 70,
+    ap: 4,
     mp: 2,
     initiative: 6,
     skills: ['m_bone_slam'],
@@ -119,6 +124,8 @@ export function createMonster(type: keyof typeof MONSTERS, id: string, pos: Pos)
     pos,
     hp: def.hp,
     maxHp: def.hp,
+    baseAp: def.ap,
+    ap: def.ap,
     baseMp: def.mp,
     mp: def.mp,
     initiative: def.initiative,

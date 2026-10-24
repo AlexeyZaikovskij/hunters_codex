@@ -126,7 +126,14 @@ export function BattleScreen({
   }, [session.log.length]);
 
   useEffect(() => {
+    // Пробел и Enter браузер отправляет кнопке в фокусе (например, «Сменить склонность»).
+    // Горячие клавиши перехватываем сами, чтобы они никогда не «нажимали» последнюю кликнутую кнопку.
+    const isHotkey = (e: KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (isHotkey(e)) e.preventDefault();
+    };
     const onKey = (e: KeyboardEvent) => {
+      if (isHotkey(e) && document.activeElement instanceof HTMLElement) document.activeElement.blur();
       const n = Number(e.key);
       if (n >= 1 && n <= hero.skills.length) session.select({ kind: 'skill', id: hero.skills[n - 1] });
       else if (e.key === 'q' || e.key === 'й') session.select({ kind: 'weapon' });
@@ -137,8 +144,17 @@ export function BattleScreen({
       } else if (e.key === 'Escape') session.cancel();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, [session, hero]);
+
+  const leave = () => {
+    if (battle.result === 'ongoing' && !window.confirm('Покинуть бой? Прогресс этого боя будет потерян.')) return;
+    onExit();
+  };
 
   const hovered = hover ? battle.unitAt(hover) : undefined;
   const isActive = (m: Mode) => JSON.stringify(m) === JSON.stringify(mode);
@@ -161,7 +177,7 @@ export function BattleScreen({
             {battle.result !== 'ongoing' ? 'Бой окончен' : myTurn ? 'Ваш ход' : session.busy && battle.current.team === 'player' ? '…' : `Ходит: ${battle.current.name}`}
           </span>
         </div>
-        <button className="ghost" onClick={onExit}>
+        <button className="ghost" onClick={leave}>
           Сменить склонность
         </button>
       </header>

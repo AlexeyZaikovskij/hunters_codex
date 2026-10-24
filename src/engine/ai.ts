@@ -8,35 +8,32 @@ import type { BattleEvent, Pos, Unit } from './types';
 // 3) иначе просто сближается;
 // 4) стрелок после атаки отходит подальше.
 
-export type AiStep = BattleEvent[];
-
-/** Выполняет ход монстра и возвращает события по шагам (для пошаговой анимации). Ход не завершает. */
-export function runAiTurn(battle: Battle, unit: Unit): AiStep[] {
-  const steps: AiStep[] = [];
-  const push = (events: BattleEvent[]) => {
-    if (events.length) steps.push(events);
-  };
+/**
+ * Ход монстра как генератор: каждое действие выполняется только тогда, когда у генератора
+ * просят следующий шаг. Так интерфейс успевает показать один шаг, прежде чем движок сделает следующий.
+ * Ход не завершает.
+ */
+export function* aiTurn(battle: Battle, unit: Unit): Generator<BattleEvent[]> {
   const target = nearestEnemy(battle, unit);
-  if (!target) return steps;
+  if (!target) return;
 
-  attackAll(battle, unit, push);
+  yield* attackAll(battle, unit);
 
   if (battle.result === 'ongoing' && unit.alive && unit.mp > 0 && canAttackSomehow(battle, unit)) {
-    const cell = bestAttackCell(battle, unit, target);
-    if (cell) {
-      push(battle.move(unit.id, cell).events);
-    } else {
-      const closer = approachCell(battle, unit, target);
-      if (closer) push(battle.move(unit.id, closer).events);
-    }
-    attackAll(battle, unit, push);
+    const cell = bestAttackCell(battle, unit, target) ?? approachCell(battle, unit, target);
+    if (cell) yield battle.move(unit.id, cell).events;
+    yield* attackAll(battle, unit);
   }
 
   if (battle.result === 'ongoing' && unit.alive && unit.ai === 'ranged' && unit.mp > 0) {
     const away = retreatCell(battle, unit, target);
-    if (away) push(battle.move(unit.id, away).events);
+    if (away) yield battle.move(unit.id, away).events;
   }
-  return steps;
+}
+
+/** Выполняет весь ход монстра сразу (для тестов и симуляций без анимации). */
+export function runAiTurn(battle: Battle, unit: Unit): BattleEvent[][] {
+  return [...aiTurn(battle, unit)];
 }
 
 function nearestEnemy(battle: Battle, unit: Unit): Unit | undefined {
@@ -52,7 +49,7 @@ function canAttackSomehow(battle: Battle, unit: Unit): boolean {
 }
 
 /** Бьёт, пока хватает ОД и есть цель в зоне досягаемости. */
-function attackAll(battle: Battle, unit: Unit, push: (e: BattleEvent[]) => void) {
+function* attackAll(battle: Battle, unit: Unit): Generator<BattleEvent[]> {
   for (let guard = 0; guard < 10 && battle.result === 'ongoing' && unit.alive; guard++) {
     let acted = false;
     for (const skill of usableSkills(battle, unit)) {
@@ -60,7 +57,7 @@ function attackAll(battle: Battle, unit: Unit, push: (e: BattleEvent[]) => void)
         .enemiesOf(unit)
         .find((e) => battle.isValidSkillTarget(unit, skill, e.pos));
       if (target) {
-        push(battle.useSkill(unit.id, skill.id, target.pos).events);
+        yield battle.useSkill(unit.id, skill.id, target.pos).events;
         acted = true;
         break;
       }

@@ -37,7 +37,7 @@ export const RULES = {
   backBonus: 1.25,
   sideBonus: 1.1,
   blockExtraMp: 1,
-  collisionDamagePerCell: 6,
+  collisionDamagePerCell: 8,
   maxWeaponAttacksPerTurn: 2,
   focusAp: 2,
   focusMana: 8,

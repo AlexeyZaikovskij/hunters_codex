@@ -14,7 +14,7 @@ const fire: SkillDef[] = [
     range: [1, 6],
     needsLos: true,
     target: 'enemy',
-    effects: [{ type: 'damage', damageType: 'fire', min: 12, max: 16 }],
+    effects: [{ type: 'damage', damageType: 'fire', min: 16, max: 20 }],
   },
   {
     id: 'fireball',
@@ -28,7 +28,7 @@ const fire: SkillDef[] = [
     target: 'cell',
     area: { shape: 'circle', radius: 1 },
     effects: [
-      { type: 'damage', damageType: 'fire', min: 10, max: 14 },
+      { type: 'damage', damageType: 'fire', min: 14, max: 18 },
       { type: 'status', status: 'burn', duration: 2, value: 5 },
     ],
   },
@@ -42,7 +42,7 @@ const fire: SkillDef[] = [
     range: [1, 4],
     needsLos: true,
     target: 'cell',
-    effects: [{ type: 'zone', zone: { kind: 'fire', damage: 8 }, duration: 2 }],
+    effects: [{ type: 'zone', zone: { kind: 'fire', damage: 10 }, duration: 2 }],
   },
   {
     id: 'fire_wave',
@@ -55,7 +55,7 @@ const fire: SkillDef[] = [
     needsLos: false,
     target: 'cell',
     area: { shape: 'lineFromCaster', length: 4 },
-    effects: [{ type: 'damage', damageType: 'fire', min: 16, max: 20 }],
+    effects: [{ type: 'damage', damageType: 'fire', min: 22, max: 27 }],
   },
   {
     id: 'fire_fury',
@@ -83,7 +83,7 @@ const light: SkillDef[] = [
     range: [1, 6],
     needsLos: true,
     target: 'enemy',
-    effects: [{ type: 'damage', damageType: 'light', min: 10, max: 13 }],
+    effects: [{ type: 'damage', damageType: 'light', min: 14, max: 17 }],
   },
   {
     id: 'heal',
@@ -95,7 +95,7 @@ const light: SkillDef[] = [
     range: [0, 4],
     needsLos: true,
     target: 'ally',
-    effects: [{ type: 'heal', min: 15, max: 20 }],
+    effects: [{ type: 'heal', min: 18, max: 24 }],
   },
   {
     id: 'faith_shield',
@@ -122,7 +122,7 @@ const light: SkillDef[] = [
     target: 'cell',
     area: { shape: 'circle', radius: 1 },
     effects: [
-      { type: 'damage', damageType: 'light', min: 6, max: 8 },
+      { type: 'damage', damageType: 'light', min: 8, max: 10 },
       { type: 'status', status: 'blind', duration: 1, value: 2 },
     ],
   },
@@ -154,21 +154,21 @@ const blood: SkillDef[] = [
     range: [1, 1],
     needsLos: true,
     target: 'enemy',
-    effects: [{ type: 'damage', damageType: 'blood', min: 14, max: 18, lifesteal: 0.5 }],
+    effects: [{ type: 'damage', damageType: 'blood', min: 18, max: 22, lifesteal: 0.5 }],
   },
   {
     id: 'bloodletting',
     name: 'Кровопускание',
     school: 'blood',
-    description: 'Урон и кровотечение: цель теряет 3 здоровья за каждую пройденную клетку.',
+    description: 'Урон и кровотечение: цель теряет 4 здоровья за каждую пройденную клетку.',
     apCost: 3,
     manaCost: 10,
     range: [1, 4],
     needsLos: true,
     target: 'enemy',
     effects: [
-      { type: 'damage', damageType: 'blood', min: 6, max: 8 },
-      { type: 'status', status: 'bleed', duration: 2, value: 3 },
+      { type: 'damage', damageType: 'blood', min: 9, max: 11 },
+      { type: 'status', status: 'bleed', duration: 2, value: 4 },
     ],
   },
   {
@@ -182,7 +182,7 @@ const blood: SkillDef[] = [
     needsLos: true,
     target: 'enemy',
     cooldown: 2,
-    effects: [{ type: 'damage', damageType: 'blood', min: 10, max: 12, lifesteal: 1 }],
+    effects: [{ type: 'damage', damageType: 'blood', min: 15, max: 18, lifesteal: 1 }],
   },
   {
     id: 'blood_sacrifice',
@@ -239,7 +239,7 @@ const space: SkillDef[] = [
     needsLos: true,
     target: 'unit',
     effects: [
-      { type: 'damage', damageType: 'space', min: 4, max: 6 },
+      { type: 'damage', damageType: 'space', min: 7, max: 9 },
       { type: 'push', distance: 3 },
     ],
   },
@@ -256,7 +256,7 @@ const space: SkillDef[] = [
     cooldown: 2,
     effects: [
       { type: 'lift' },
-      { type: 'damage', damageType: 'space', min: 14, max: 18 },
+      { type: 'damage', damageType: 'space', min: 18, max: 22 },
       { type: 'status', status: 'slow', duration: 1, value: 1 },
     ],
   },
@@ -284,7 +284,7 @@ const space: SkillDef[] = [
     line: true,
     needsLos: true,
     target: 'enemy',
-    effects: [{ type: 'damage', damageType: 'space', min: 12, max: 15, ignoreResist: 0.5 }],
+    effects: [{ type: 'damage', damageType: 'space', min: 17, max: 21, ignoreResist: 0.5 }],
   },
 ];
 
@@ -353,7 +353,7 @@ const monster: SkillDef[] = [
     range: [1, 1],
     needsLos: true,
     target: 'enemy',
-    effects: [{ type: 'damage', damageType: 'physical', min: 8, max: 11 }],
+    effects: [{ type: 'damage', damageType: 'physical', min: 7, max: 10 }],
   },
   {
     id: 'm_spine',
@@ -377,7 +377,7 @@ const monster: SkillDef[] = [
     range: [1, 1],
     needsLos: true,
     target: 'enemy',
-    effects: [{ type: 'damage', damageType: 'physical', min: 12, max: 15 }],
+    effects: [{ type: 'damage', damageType: 'physical', min: 11, max: 14 }],
   },
 ];
 

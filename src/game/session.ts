@@ -1,5 +1,5 @@
 import { Battle } from '../engine/battle';
-import { runAiTurn } from '../engine/ai';
+import { aiTurn } from '../engine/ai';
 import { Grid } from '../engine/grid';
 import type { BattleEvent, Location, Pos, Unit, WeaponDef } from '../engine/types';
 import { SKILLS } from '../data/skills';
@@ -153,7 +153,8 @@ export class BattleSession {
   private async runEnemies() {
     while (this.battle.result === 'ongoing' && this.battle.current.team === 'enemy') {
       const unit = this.battle.current;
-      for (const step of runAiTurn(this.battle, unit)) await this.play(step);
+      // Генератор: следующее действие монстра считается только после показа предыдущего.
+      for (const step of aiTurn(this.battle, unit)) await this.play(step);
       if (this.battle.result !== 'ongoing') break;
       await this.play(this.battle.endTurn().events);
     }
