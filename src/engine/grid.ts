@@ -18,7 +18,10 @@ export const add = (a: Pos, b: Pos): Pos => ({ x: a.x + b.x, y: a.y + b.y });
 /** Расстояние в шагах по горизонтали и вертикали (без диагоналей). */
 export const distance = (a: Pos, b: Pos) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
-export const isInLine = (a: Pos, b: Pos) => a.x === b.x || a.y === b.y;
+/** Насколько далеко от центра клетки может начинаться и заканчиваться луч обзора. */
+const LOS_SPREAD = 0.3;
+
+export const isInLine =(a: Pos, b: Pos) => a.x === b.x || a.y === b.y;
 
 export function neighbors(p: Pos): Pos[] {
   return Object.values(DIRS).map((d) => add(p, d));
@@ -62,34 +65,45 @@ export class Grid {
     return this.inBounds(p) && !this.isObstacle(p);
   }
 
-  /** Клетки строго между a и b, через которые проходит луч. */
-  private cellsOnRay(a: Pos, b: Pos, bias: number): Pos[] {
-    const steps = distance(a, b) * 6;
-    const cells: Pos[] = [];
-    const seen = new Set<string>([key(a), key(b)]);
-    for (let i = 1; i < steps; i++) {
-      const t = i / steps;
-      const p = {
-        x: Math.round(a.x + (b.x - a.x) * t + bias),
-        y: Math.round(a.y + (b.y - a.y) * t + bias),
-      };
-      const k = key(p);
-      if (!seen.has(k)) {
-        seen.add(k);
-        cells.push(p);
+  /**
+   * Свободен ли отрезок между точками (в координатах клеток) от препятствий, кроме клеток a и b.
+   * Точка ровно на границе клеток задевает обе — сквозь стык двух камней не видно.
+   */
+  private segmentClear(from: { x: number; y: number }, to: { x: number; y: number }, a: Pos, b: Pos, isBlocking: (p: Pos) => boolean) {
+    // Луч проходит клетку, только пересекая её границу, поэтому достаточно проверить клетки по обе стороны
+    // каждого пересечения с линиями сетки (x = k + 0.5, y = k + 0.5).
+    const crossings = (p: number, q: number) => {
+      const ts: number[] = [];
+      if (p === q) return ts;
+      for (let k = Math.ceil(Math.min(p, q) - 0.5); k + 0.5 <= Math.max(p, q); k++) {
+        const t = (k + 0.5 - p) / (q - p);
+        if (t > 0 && t < 1) ts.push(t);
       }
+      return ts;
+    };
+    const near = (v: number) => [...new Set([Math.round(v - 1e-6), Math.round(v + 1e-6)])];
+    for (const t of [...crossings(from.x, to.x), ...crossings(from.y, to.y)]) {
+      for (const x of near(from.x + (to.x - from.x) * t))
+        for (const y of near(from.y + (to.y - from.y) * t)) {
+          const p = { x, y };
+          if (samePos(p, a) || samePos(p, b)) continue;
+          if (isBlocking(p)) return false;
+        }
     }
-    return cells;
+    return true;
   }
 
   /**
-   * Линия обзора между центрами клеток. Луч проверяется с небольшим сдвигом в обе стороны:
-   * если хотя бы один вариант свободен, цель видна (луч «проходит по углу»).
+   * Линия обзора: цель видна, если хоть один луч от «тела» в клетке a до «тела» в клетке b
+   * (точки в пределах ±LOS_SPREAD от центра) не задевает препятствий. Так можно стрелять из-за угла камня,
+   * но не сквозь камень по прямой и не сквозь стену из двух камней.
    */
   hasLineOfSight(a: Pos, b: Pos, isBlocking: (p: Pos) => boolean): boolean {
     if (distance(a, b) <= 1) return true;
-    const clear = (bias: number) => this.cellsOnRay(a, b, bias).every((p) => !isBlocking(p));
-    return clear(0.001) || clear(-0.001);
+    const offsets = [0, -LOS_SPREAD, LOS_SPREAD];
+    const points = (p: Pos) => offsets.flatMap((dx) => offsets.map((dy) => ({ x: p.x + dx, y: p.y + dy })));
+    const targets = points(b);
+    return points(a).some((from) => targets.some((to) => this.segmentClear(from, to, a, b, isBlocking)));
   }
 
   /**
