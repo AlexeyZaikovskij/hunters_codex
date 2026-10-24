@@ -18,10 +18,13 @@ export const add = (a: Pos, b: Pos): Pos => ({ x: a.x + b.x, y: a.y + b.y });
 /** Расстояние в шагах по горизонтали и вертикали (без диагоналей). */
 export const distance = (a: Pos, b: Pos) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
-/** Насколько далеко от центра клетки может начинаться и заканчиваться луч обзора. */
-const LOS_SPREAD = 0.3;
+/**
+ * Существо закрывает обзор, если линия проходит ближе этого к его центру (в клетках).
+ * 0.4 — линия «ходом коня» мимо соседа (≈0.45) проходит, а сквозь клетку существа — нет.
+ */
+const UNIT_LOS_RADIUS = 0.4;
 
-export const isInLine =(a: Pos, b: Pos) => a.x === b.x || a.y === b.y;
+export const isInLine = (a: Pos, b: Pos) => a.x === b.x || a.y === b.y;
 
 export function neighbors(p: Pos): Pos[] {
   return Object.values(DIRS).map((d) => add(p, d));
@@ -66,44 +69,54 @@ export class Grid {
   }
 
   /**
-   * Свободен ли отрезок между точками (в координатах клеток) от препятствий, кроме клеток a и b.
-   * Точка ровно на границе клеток задевает обе — сквозь стык двух камней не видно.
+   * Линия обзора — отрезок между центрами клеток a и b.
+   * - Камни непрозрачные: отрезок не должен заходить внутрь клетки с камнем. Если он проходит ровно через угол,
+   *   мешает только стык двух камней по диагонали.
+   * - Существа узкие: блокер мешает, только если отрезок проходит ближе UNIT_LOS_RADIUS к его центру.
+   *   Кто именно блокирует (обычно — враги стреляющего), решает вызывающий код.
    */
-  private segmentClear(from: { x: number; y: number }, to: { x: number; y: number }, a: Pos, b: Pos, isBlocking: (p: Pos) => boolean) {
-    // Луч проходит клетку, только пересекая её границу, поэтому достаточно проверить клетки по обе стороны
-    // каждого пересечения с линиями сетки (x = k + 0.5, y = k + 0.5).
-    const crossings = (p: number, q: number) => {
+  hasLineOfSight(a: Pos, b: Pos, isWall: (p: Pos) => boolean, blockers: Pos[] = []): boolean {
+    if (distance(a, b) <= 1) return true;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const at = (t: number) => ({ x: a.x + dx * t, y: a.y + dy * t });
+    const cellAt = (t: number) => {
+      const p = at(t);
+      return { x: Math.round(p.x), y: Math.round(p.y) };
+    };
+    const wall = (p: Pos) => !samePos(p, a) && !samePos(p, b) && isWall(p);
+
+    // Моменты пересечения границ клеток (x = k + 0.5 или y = k + 0.5).
+    const crossings = (from: number, d: number) => {
       const ts: number[] = [];
-      if (p === q) return ts;
-      for (let k = Math.ceil(Math.min(p, q) - 0.5); k + 0.5 <= Math.max(p, q); k++) {
-        const t = (k + 0.5 - p) / (q - p);
-        if (t > 0 && t < 1) ts.push(t);
-      }
+      for (let k = Math.min(from, from + d); k < Math.max(from, from + d); k++) ts.push((k + 0.5 - from) / d);
       return ts;
     };
-    const near = (v: number) => [...new Set([Math.round(v - 1e-6), Math.round(v + 1e-6)])];
-    for (const t of [...crossings(from.x, to.x), ...crossings(from.y, to.y)]) {
-      for (const x of near(from.x + (to.x - from.x) * t))
-        for (const y of near(from.y + (to.y - from.y) * t)) {
-          const p = { x, y };
-          if (samePos(p, a) || samePos(p, b)) continue;
-          if (isBlocking(p)) return false;
-        }
-    }
-    return true;
-  }
+    const xs = dx ? crossings(a.x, dx) : [];
+    const ys = dy ? crossings(a.y, dy) : [];
+    const ts = [...xs, ...ys].sort((m, n) => m - n).filter((t, i, arr) => i === 0 || t - arr[i - 1] > 1e-9);
+    const bounds = [0, ...ts, 1];
+    for (let i = 0; i + 1 < bounds.length; i++) if (wall(cellAt((bounds[i] + bounds[i + 1]) / 2))) return false;
 
-  /**
-   * Линия обзора: цель видна, если хоть один луч от «тела» в клетке a до «тела» в клетке b
-   * (точки в пределах ±LOS_SPREAD от центра) не задевает препятствий. Так можно стрелять из-за угла камня,
-   * но не сквозь камень по прямой и не сквозь стену из двух камней.
-   */
-  hasLineOfSight(a: Pos, b: Pos, isBlocking: (p: Pos) => boolean): boolean {
-    if (distance(a, b) <= 1) return true;
-    const offsets = [0, -LOS_SPREAD, LOS_SPREAD];
-    const points = (p: Pos) => offsets.flatMap((dx) => offsets.map((dy) => ({ x: p.x + dx, y: p.y + dy })));
-    const targets = points(b);
-    return points(a).some((from) => targets.some((to) => this.segmentClear(from, to, a, b, isBlocking)));
+    // Проход ровно через угол: клетки по бокам задеты только точкой, мешают лишь обе сразу.
+    for (const t of ts) {
+      if (!xs.some((x) => Math.abs(x - t) < 1e-9) || !ys.some((y) => Math.abs(y - t) < 1e-9)) continue;
+      const c = at(t);
+      const before = cellAt(t - 1e-6);
+      const after = cellAt(t + 1e-6);
+      const sides = [-0.5, 0.5]
+        .flatMap((ox) => [-0.5, 0.5].map((oy) => ({ x: Math.round(c.x + ox), y: Math.round(c.y + oy) })))
+        .filter((p) => !samePos(p, before) && !samePos(p, after));
+      if (sides.every(wall)) return false;
+    }
+
+    const len2 = dx * dx + dy * dy;
+    return blockers.every((u) => {
+      if (samePos(u, a) || samePos(u, b)) return true;
+      const t = Math.max(0, Math.min(1, ((u.x - a.x) * dx + (u.y - a.y) * dy) / len2));
+      const p = at(t);
+      return Math.hypot(u.x - p.x, u.y - p.y) >= UNIT_LOS_RADIUS;
+    });
   }
 
   /**

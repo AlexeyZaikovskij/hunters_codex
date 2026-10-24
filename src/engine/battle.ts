@@ -181,8 +181,10 @@ export class Battle {
     return { path: buildPath(map, target), cost: node.cost };
   }
 
-  hasLos(from: Pos, to: Pos): boolean {
-    return this.grid.hasLineOfSight(from, to, (p) => this.grid.isObstacle(p) || !!this.unitAt(p));
+  /** Видит ли юнит клетку. Камни закрывают обзор, враги — только по центру, свои не мешают. */
+  hasLos(unit: Unit, to: Pos): boolean {
+    const blockers = this.units.filter((u) => u.alive && u.team !== unit.team).map((u) => u.pos);
+    return this.grid.hasLineOfSight(unit.pos, to, (p) => this.grid.isObstacle(p), blockers);
   }
 
   effectiveRange(unit: Unit, range: [number, number]): [number, number] {
@@ -240,7 +242,7 @@ export class Battle {
     const d = distance(unit.pos, cell);
     if (d < min || d > max) return false;
     if (skill.line && d > 0 && !isInLine(unit.pos, cell)) return false;
-    if (skill.needsLos && d > 0 && !this.hasLos(unit.pos, cell)) return false;
+    if (skill.needsLos && d > 0 && !this.hasLos(unit, cell)) return false;
     const target = this.unitAt(cell);
     switch (skill.target) {
       case 'self':
@@ -316,7 +318,7 @@ export class Battle {
     const d = distance(unit.pos, cell);
     if (d < min || d > max) return false;
     if (w.line && !isInLine(unit.pos, cell)) return false;
-    return this.hasLos(unit.pos, cell);
+    return this.hasLos(unit, cell);
   }
 
   // ───────────────────────── Действия ─────────────────────────

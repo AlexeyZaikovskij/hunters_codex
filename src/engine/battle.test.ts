@@ -79,6 +79,16 @@ describe('Battle', () => {
     expect(hit[1].type === 'damage' && hit[1].amount).toBe(4);
   });
 
+  it('allies do not block line of sight, enemies do', () => {
+    const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 1, y: 2 });
+    const gnawer = createMonster('gnawer', 'm1', { x: 3, y: 2 });
+    const spitter = createMonster('spitter', 'm2', { x: 5, y: 2 });
+    const battle = setup([hero, gnawer, spitter]);
+    // Иглобрюх стреляет из-за спины Червеглота, а герой сквозь Червеглота не видит.
+    expect(battle.isValidSkillTarget(spitter, SKILLS.m_spine, hero.pos)).toBe(true);
+    expect(battle.isValidSkillTarget(hero, SKILLS.fire_bolt, spitter.pos)).toBe(false);
+  });
+
   it('a unit hit by a pushed unit takes the same collision damage, and the preview shows it', () => {
     const hero = createHero('fire', WEAPONS_BY_ID.hammer, { x: 1, y: 2 });
     const mob = createMonster('gnawer', 'm1', { x: 2, y: 2 });
