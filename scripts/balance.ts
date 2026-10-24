@@ -1,6 +1,7 @@
-// Балансовая симуляция: бот играет учебный бой много раз каждой школой с разным оружием.
-// Запуск: npm run balance            (по умолчанию 200 боёв на сочетание)
-//         npm run balance -- 500     (своё число боёв)
+// Балансовая симуляция: бот играет бой много раз каждой школой с разным оружием.
+// Запуск: npm run balance              (200 боёв на сочетание, учебная карта)
+//         npm run balance -- 500       (своё число боёв)
+//         npm run balance -- 200 E     (случайные Червоточины класса E; или D)
 //
 // Бот не гений, но играет разумно: каждое действие выбирает по ожидаемому урону,
 // подходит на позицию для атаки, лечится и ставит щиты, когда здоровья мало.
@@ -11,7 +12,8 @@ import { runAiTurn } from '../src/engine/ai';
 import { SKILLS } from '../src/data/skills';
 import { WEAPONS_BY_ID } from '../src/data/weapons';
 import { createHero, createMonster } from '../src/data/units';
-import { TRAINING_WORMHOLE as map } from '../src/data/maps';
+import { TRAINING_WORMHOLE, type MapDef } from '../src/data/maps';
+import { generateWormhole, type DangerClass } from '../src/data/mapgen';
 import type { Pos, SkillDef, Unit } from '../src/engine/types';
 
 type Affinity = 'fire' | 'light' | 'blood' | 'space';
@@ -31,24 +33,22 @@ function scoreSkill(b: Battle, hero: Unit, skill: SkillDef, cell: Pos): number {
     ? b.areaCells(hero, skill, cell).map((p) => b.unitAt(p)).filter((u): u is Unit => !!u && u.team !== hero.team)
     : [b.unitAt(cell)].filter((u): u is Unit => !!u);
   let score = 0;
+  // Урон — по тому же прогнозу, что видит игрок: сопротивления, щиты, спина, столкновения.
+  for (const p of b.previewAction(hero, { kind: 'skill', id: skill.id }, cell)) {
+    const t = b.unit(p.unitId);
+    if (p.kind !== 'damage' || t.team === hero.team) continue;
+    const dmg = avg(p.hpLossMin, p.hpLossMax);
+    const lifesteal = skill.effects.find((e) => e.type === 'damage' && e.lifesteal);
+    score += Math.min(dmg, t.hp) + (dmg >= t.hp ? 15 : 0) + (lifesteal?.type === 'damage' ? dmg * (lifesteal.lifesteal ?? 0) * 0.5 : 0);
+  }
   for (const e of skill.effects) {
     switch (e.type) {
-      case 'damage':
-        for (const t of targets) {
-          if (t.team === hero.team) continue;
-          let dmg = avg(e.min, e.max) * (1 + hero.stats.intellect / 100);
-          if (e.damageType === 'light' && t.tags.includes('wormhole')) dmg *= 1.25;
-          if (e.damageType === 'light' && t.tags.includes('undead')) dmg *= 1.5;
-          dmg *= 1 - (t.resist[e.damageType] ?? 0) / 100;
-          score += Math.min(dmg, t.hp) + (dmg >= t.hp ? 15 : 0) + dmg * (e.lifesteal ?? 0) * 0.5;
-        }
-        break;
       case 'status':
         if (e.status === 'burn' || e.status === 'bleed') score += targets.length * e.value * e.duration * 0.7;
         if (e.status === 'slow' || e.status === 'blind') score += targets.length * 3;
         break;
       case 'push':
-        score += 8;
+        score += 3; // отбросить врага от себя — немного полезно и без стены
         break;
       case 'zone':
         if (e.zone.kind === 'fire') score += b.enemiesOf(hero).some((x) => distance(x.pos, cell) <= 1) ? 10 : 0;
@@ -162,7 +162,7 @@ function heroTurn(b: Battle, hero: Unit, stats: Stats) {
   if (b.result === 'ongoing' && hero.ap >= 2 && hero.mana < hero.maxMana - 5) b.focus('hero');
 }
 
-function simulate(affinity: Affinity, weaponId: string, seed: number) {
+function simulate(affinity: Affinity, weaponId: string, seed: number, map: MapDef) {
   const units = [
     createHero(affinity, WEAPONS_BY_ID[weaponId], map.heroStart),
     ...map.monsters.map((m, i) => createMonster(m.type, `m${i + 1}`, m.pos)),
@@ -180,17 +180,24 @@ function simulate(affinity: Affinity, weaponId: string, seed: number) {
 }
 
 const games = Number(process.argv[2]) || 200;
+const mapArg = process.argv[3]?.toUpperCase();
+const dangerClass = mapArg === 'E' || mapArg === 'D' ? (mapArg as DangerClass) : null;
+// На случайных картах бой номер i во всех сочетаниях идёт в одной и той же Червоточине — сравнение честное.
+const maps = Array.from({ length: games }, (_, i) =>
+  dangerClass ? generateWormhole({ seed: 5000 + i, dangerClass }) : TRAINING_WORMHOLE,
+);
+const mapLabel = dangerClass ? `случайные Червоточины класса ${dangerClass}` : TRAINING_WORMHOLE.name;
 const schools: Affinity[] = ['fire', 'light', 'blood', 'space'];
 const weapons = ['sword', 'hammer', 'dagger', 'bow'];
 const pct = (x: number) => `${Math.round(x * 100)}%`.padStart(5);
 
-console.log(`\nБалансовая симуляция: ${games} боёв на сочетание, ${map.name}\n`);
+console.log(`\nБалансовая симуляция: ${games} боёв на сочетание, ${mapLabel}\n`);
 console.log('Школа          Оружие     Победы  Раунды  ОЗ в конце  Доля урона магией');
 for (const school of schools) {
   for (const weapon of weapons) {
     let wins = 0, rounds = 0, hp = 0, spell = 0, weaponDmg = 0;
     for (let i = 0; i < games; i++) {
-      const r = simulate(school, weapon, 1000 + i);
+      const r = simulate(school, weapon, 1000 + i, maps[i]);
       wins += +r.win;
       rounds += r.rounds;
       if (r.win) hp += r.hpLeft;

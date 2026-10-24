@@ -8,6 +8,9 @@ export interface MapDef {
   obstacles: Pos[];
   heroStart: Pos;
   monsters: { type: keyof typeof MONSTERS; pos: Pos }[];
+  /** Для сгенерированных Червоточин: зерно и класс опасности. */
+  seed?: number;
+  dangerClass?: 'E' | 'D';
 }
 
 // Карта задаётся ASCII-схемой: # — препятствие, H — Одарённый, буквы — монстры.

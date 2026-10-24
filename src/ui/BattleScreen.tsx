@@ -168,10 +168,13 @@ interface ActionInfo {
 export function BattleScreen({
   session,
   onRetry,
+  onNewMap,
   onExit,
 }: {
   session: BattleSession;
   onRetry: () => void;
+  /** Только для случайных Червоточин: новое поле того же класса. */
+  onNewMap?: () => void;
   onExit: () => void;
 }) {
   useSession(session);
@@ -231,6 +234,7 @@ export function BattleScreen({
           <h1>Atrium</h1>
           <span className="sub">
             {session.setup.map.name} · {session.setup.location === 'wormhole' ? 'внутри Червоточины' : 'прорыв на поверхности'}
+            {session.setup.map.seed !== undefined && ` · зерно ${session.setup.map.seed}`}
           </span>
         </div>
         <div className="turn-info">
@@ -280,9 +284,14 @@ export function BattleScreen({
                 : 'Вас вынесли из Червоточины. Служба контроля напоминает: страховка не покрывает «я думал, он слабый».'}
             </p>
             <div className="result-actions">
-              <button className="primary" onClick={onRetry}>
+              <button className={onNewMap ? 'ghost' : 'primary'} onClick={onRetry}>
                 Ещё раз
               </button>
+              {onNewMap && (
+                <button className="primary" onClick={onNewMap}>
+                  Новая Червоточина
+                </button>
+              )}
               <button className="ghost" onClick={onExit}>
                 Сменить склонность
               </button>
