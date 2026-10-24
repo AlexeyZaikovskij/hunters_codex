@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "balance": "vite-node scripts/balance.ts",
-    "maps": "vite-node scripts/maps-preview.ts"
+    "maps": "vite-node scripts/maps-preview.ts",
+    "icons": "vite-node scripts/build-icons.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -19,6 +20,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@iconify-json/game-icons": "1.2.4",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",

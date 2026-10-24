@@ -4,6 +4,7 @@ import type { Affinity, SessionSetup } from '../game/session';
 import { SKILLS, SCHOOL_SKILLS } from '../data/skills';
 import { WEAPONS } from '../data/weapons';
 import { TRAINING_WORMHOLE } from '../data/maps';
+import { Icon } from './Icon';
 import { generateWormhole, randomSeed, type DangerClass } from '../data/mapgen';
 import { BODY_SLOTS, DEFAULT_BODY_SKILLS } from '../data/units';
 import type { Location } from '../engine/types';
@@ -67,9 +68,12 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
             >
               <strong>{a.name}</strong>
               <span>{a.tagline}</span>
-              <ul>
+              <ul className="skill-list">
                 {SCHOOL_SKILLS[a.id].map((id) => (
-                  <li key={id}>{SKILLS[id].name}</li>
+                  <li key={id}>
+                    <Icon name={SKILLS[id].icon} size={16} />
+                    {SKILLS[id].name}
+                  </li>
                 ))}
               </ul>
             </button>
@@ -92,7 +96,10 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
                 disabled={!on && bodySkills.length >= BODY_SLOTS}
                 onClick={() => toggleBody(id)}
               >
-                <strong>{s.name}</strong>
+                <strong className="with-icon">
+                  <Icon name={s.icon} size={22} />
+                  {s.name}
+                </strong>
                 <span className="mono">
                   {s.apCost} ОД · {s.manaCost} маны{s.cooldown ? ` · перезарядка ${s.cooldown}` : ''}
                 </span>
@@ -115,7 +122,10 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
               className={`weapon ${weaponId === w.id ? 'selected' : ''}`}
               onClick={() => setWeaponId(w.id)}
             >
-              <strong>{w.name}</strong>
+              <strong className="with-icon">
+                <Icon name={w.icon} size={22} />
+                {w.name}
+              </strong>
               <span className="mono">
                 {w.apCost} ОД · {w.range[0]}–{w.range[1]} · {w.min}–{w.max}
               </span>
@@ -193,6 +203,17 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
       >
         В бой
       </button>
+
+      <footer className="credits">
+        Иконки:{' '}
+        <a href="https://game-icons.net" target="_blank" rel="noreferrer">
+          game-icons.net
+        </a>{' '}
+        (Lorc, Delapouite и другие авторы),{' '}
+        <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">
+          CC BY 3.0
+        </a>
+      </footer>
     </div>
   );
 }

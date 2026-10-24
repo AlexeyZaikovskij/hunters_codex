@@ -5,6 +5,7 @@ import type { WeaponDef } from '../engine/types';
 export const WEAPONS: WeaponDef[] = [
   {
     id: 'dagger',
+    icon: 'plain-dagger',
     name: 'Кинжал',
     apCost: 3,
     range: [1, 1],
@@ -16,6 +17,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'sword',
+    icon: 'broadsword',
     name: 'Меч',
     apCost: 4,
     range: [1, 1],
@@ -26,6 +28,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'hammer',
+    icon: 'warhammer',
     name: 'Молот',
     apCost: 5,
     range: [1, 1],
@@ -37,6 +40,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'spear',
+    icon: 'barbed-spear',
     name: 'Копьё',
     apCost: 4,
     range: [1, 2],
@@ -48,6 +52,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'bow',
+    icon: 'pocket-bow',
     name: 'Лук',
     apCost: 4,
     range: [2, 6],
@@ -58,6 +63,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'crossbow',
+    icon: 'crossbow',
     name: 'Арбалет',
     apCost: 5,
     range: [2, 7],
@@ -68,6 +74,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'throwing',
+    icon: 'thrown-daggers',
     name: 'Метательные ножи',
     apCost: 3,
     range: [1, 4],
@@ -78,6 +85,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 'pistol',
+    icon: 'revolver',
     name: 'Пистолет',
     apCost: 4,
     range: [2, 8],

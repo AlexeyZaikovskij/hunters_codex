@@ -32,6 +32,8 @@ function baseUnit(partial: Partial<Unit> & Pick<Unit, 'id' | 'name' | 'team' | '
   };
 }
 
+export const HERO_ICON = 'hooded-figure';
+
 /** Сколько умений базовой школы берётся в бой: 5 склонности + 3 базовой = 8 слотов. */
 export const BODY_SLOTS = 3;
 export const DEFAULT_BODY_SKILLS = ['energy_armor', 'dash', 'power_strike'];
@@ -47,6 +49,7 @@ export function createHero(affinity: Affinity, weapon: WeaponDef, pos: Pos, body
     name: 'Одарённый',
     team: 'player',
     glyph: 'Я',
+    icon: HERO_ICON,
     color: 0x4fa3ff,
     pos,
     hp: maxHp,
@@ -62,6 +65,7 @@ export function createHero(affinity: Affinity, weapon: WeaponDef, pos: Pos, body
 }
 
 interface MonsterDef {
+  icon: string;
   name: string;
   glyph: string;
   color: number;
@@ -80,6 +84,7 @@ interface MonsterDef {
 
 export const MONSTERS: Record<string, MonsterDef> = {
   gnawer: {
+    icon: 'worm-mouth',
     name: 'Червеглот',
     glyph: 'Ч',
     color: 0xc0563a,
@@ -93,6 +98,7 @@ export const MONSTERS: Record<string, MonsterDef> = {
     resist: { physical: 10 },
   },
   spitter: {
+    icon: 'porcupine',
     name: 'Иглобрюх',
     glyph: 'И',
     color: 0x8bbf3a,
@@ -106,6 +112,7 @@ export const MONSTERS: Record<string, MonsterDef> = {
     resist: { fire: -10 },
   },
   bone_guard: {
+    icon: 'skeleton',
     name: 'Костяной страж',
     glyph: 'К',
     color: 0xd9d2b6,
@@ -128,6 +135,7 @@ export function createMonster(type: keyof typeof MONSTERS, id: string, pos: Pos)
     name: def.name,
     team: 'enemy',
     glyph: def.glyph,
+    icon: def.icon,
     color: def.color,
     pos,
     hp: def.hp,

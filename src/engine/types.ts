@@ -82,6 +82,8 @@ export type SkillEffect =
 
 export interface SkillDef {
   id: string;
+  /** Иконка из набора game-icons.net (см. src/data/icons.ts). */
+  icon?: string;
   name: string;
   school: School;
   description: string;
@@ -103,6 +105,7 @@ export interface SkillDef {
 
 export interface WeaponDef {
   id: string;
+  icon?: string;
   name: string;
   apCost: number;
   range: [number, number];
@@ -128,6 +131,8 @@ export interface Unit {
   team: Team;
   /** Короткая подпись для отрисовки на поле. */
   glyph: string;
+  /** Иконка фишки на поле; без неё рисуется буква. */
+  icon?: string;
   color: number;
   pos: Pos;
   facing: Dir;

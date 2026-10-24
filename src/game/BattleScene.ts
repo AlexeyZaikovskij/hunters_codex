@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { BattleSession } from './session';
 import type { BattleEvent, DamageType, Dir, Pos, Unit } from '../engine/types';
 import { SKILLS } from '../data/skills';
+import { ICONS } from '../data/icons';
 import { key, samePos } from '../engine/grid';
 
 // Отрисовка поля боя. Логики боя здесь нет: сцена только показывает состояние и проигрывает события.
@@ -57,6 +58,15 @@ interface UnitView {
 
 const center = (p: Pos) => ({ x: p.x * CELL + CELL / 2, y: p.y * CELL + CELL / 2 });
 
+/** Иконки грузятся белыми, нужный цвет даёт tint. */
+const iconKey = (name: string) => `icon:${name}`;
+const ICON_TEXTURE_SIZE = 96;
+
+function iconDataUrl(body: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="${ICON_TEXTURE_SIZE}" height="${ICON_TEXTURE_SIZE}">${body.replace(/currentColor/g, '#ffffff')}</svg>`;
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+}
+
 export class BattleScene extends Phaser.Scene {
   private session!: BattleSession;
   private overlay!: Phaser.GameObjects.Graphics;
@@ -72,6 +82,11 @@ export class BattleScene extends Phaser.Scene {
 
   init(data: { session: BattleSession }) {
     this.session = data.session;
+  }
+
+  preload() {
+    for (const [name, body] of Object.entries(ICONS))
+      this.load.svg(iconKey(name), iconDataUrl(body), { width: ICON_TEXTURE_SIZE, height: ICON_TEXTURE_SIZE });
   }
 
   create() {
@@ -134,14 +149,19 @@ export class BattleScene extends Phaser.Scene {
     const shadow = this.add.ellipse(0, 16, 40, 12, 0x000000, 0.4);
     const team = this.add.circle(0, 0, 21).setStrokeStyle(3, u.team === 'player' ? COLORS.player : COLORS.enemy);
     const body = this.add.circle(0, 0, 19, u.color);
-    const glyph = this.add
-      .text(0, 0, u.glyph, { fontFamily: 'Rubik, sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#10131c' })
-      .setOrigin(0.5);
+    // Блик сверху — чтобы фишка выглядела объёмной, а не плоским кружком.
+    const shine = this.add.ellipse(0, -8, 24, 12, 0xffffff, 0.22);
+    const glyph =
+      u.icon && this.textures.exists(iconKey(u.icon))
+        ? this.add.image(0, 1, iconKey(u.icon)).setDisplaySize(26, 26).setTint(0x10131c)
+        : this.add
+            .text(0, 0, u.glyph, { fontFamily: 'Rubik, sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#10131c' })
+            .setOrigin(0.5);
     const facing = this.add.triangle(0, 0, 0, -6, 0, 6, 9, 0, 0xffffff).setOrigin(0, 0.5);
     const hpBack = this.add.rectangle(-20, -31, 40, 6, 0x000000, 0.7).setOrigin(0, 0.5);
     const hpBar = this.add.rectangle(-20, -31, 40, 6, u.team === 'player' ? 0x5be38f : 0xff5d5d).setOrigin(0, 0.5);
     const shieldBar = this.add.rectangle(-20, -36, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
-    const container = this.add.container(x, y, [ring, shadow, team, body, glyph, facing, hpBack, hpBar, shieldBar]);
+    const container = this.add.container(x, y, [ring, shadow, team, body, shine, glyph, facing, hpBack, hpBar, shieldBar]);
     container.setDepth(10 + u.pos.y);
     const view = { container, body, facing, hpBar, shieldBar, ring };
     this.views.set(u.id, view);
@@ -268,6 +288,26 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  /** Иконка действия: умение или оружие заклинателя. */
+  private castIcon(unitId: string, skillId: string): string | undefined {
+    if (skillId === 'weapon') return this.session.battle.unit(unitId).weapon?.icon;
+    return SKILLS[skillId]?.icon;
+  }
+
+  /** Иконка действия всплывает над юнитом и тает. */
+  private popIcon(x: number, y: number, name: string | undefined, color: number) {
+    if (!name || !this.textures.exists(iconKey(name))) return;
+    const icon = this.add.image(x, y - 34, iconKey(name)).setDisplaySize(30, 30).setTint(color).setDepth(95);
+    this.tweens.add({
+      targets: icon,
+      y: y - 52,
+      alpha: { from: 1, to: 0 },
+      duration: 650,
+      ease: 'Cubic.easeIn',
+      onComplete: () => icon.destroy(),
+    });
+  }
+
   // ───────────── Анимация событий ─────────────
 
   private tween(config: Phaser.Types.Tweens.TweenBuilderConfig): Promise<void> {
@@ -344,6 +384,7 @@ export class BattleScene extends Phaser.Scene {
           if (view) {
             const caster = view.container;
             const to = center(e.target);
+            this.popIcon(caster.x, caster.y, this.castIcon(e.unitId, e.skillId), color);
             if (e.skillId === 'weapon' || SKILLS[e.skillId]?.target !== 'self') {
               const orb = this.add.circle(caster.x, caster.y, 6, color).setDepth(90);
               await this.tween({ targets: orb, x: to.x, y: to.y, duration: 160 });

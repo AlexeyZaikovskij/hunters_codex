@@ -6,6 +6,7 @@ import type { SkillDef } from '../engine/types';
 const fire: SkillDef[] = [
   {
     id: 'fire_bolt',
+    icon: 'fire-ray',
     name: 'Огненная стрела',
     school: 'fire',
     description: 'Сгусток пламени, летящий точно в цель.',
@@ -18,6 +19,7 @@ const fire: SkillDef[] = [
   },
   {
     id: 'fireball',
+    icon: 'fireball',
     name: 'Огненный шар',
     school: 'fire',
     description: 'Взрыв, поджигающий всех врагов рядом с точкой падения.',
@@ -34,6 +36,7 @@ const fire: SkillDef[] = [
   },
   {
     id: 'ignite',
+    icon: 'burning-embers',
     name: 'Поджог',
     school: 'fire',
     description:
@@ -52,6 +55,7 @@ const fire: SkillDef[] = [
   },
   {
     id: 'fire_wave',
+    icon: 'fire-wave',
     name: 'Огненная волна',
     school: 'fire',
     description: 'Стена огня на 4 клетки в выбранном направлении.',
@@ -65,6 +69,7 @@ const fire: SkillDef[] = [
   },
   {
     id: 'fire_fury',
+    icon: 'burning-passion',
     name: 'Пламенная ярость',
     school: 'fire',
     description: '+20% урона огнём на 2 хода.',
@@ -81,6 +86,7 @@ const fire: SkillDef[] = [
 const light: SkillDef[] = [
   {
     id: 'light_ray',
+    icon: 'sunbeams',
     name: 'Луч света',
     school: 'light',
     description: 'Жжёт тварей из Червоточин (+25%), а нежить — особенно (×1,5).',
@@ -93,6 +99,7 @@ const light: SkillDef[] = [
   },
   {
     id: 'heal',
+    icon: 'healing',
     name: 'Исцеление',
     school: 'light',
     description: 'Восстанавливает 15–20 здоровья.',
@@ -105,6 +112,7 @@ const light: SkillDef[] = [
   },
   {
     id: 'faith_shield',
+    icon: 'cross-shield',
     name: 'Щит веры',
     school: 'light',
     description: 'Щит, поглощающий 25 урона, на 2 хода.',
@@ -118,6 +126,7 @@ const light: SkillDef[] = [
   },
   {
     id: 'flash',
+    icon: 'sun-radiations',
     name: 'Вспышка',
     school: 'light',
     description: 'Слепящий свет: урон и −2 к дальности врагов в зоне.',
@@ -134,6 +143,7 @@ const light: SkillDef[] = [
   },
   {
     id: 'holy_ground',
+    icon: 'holy-symbol',
     name: 'Освящённая земля',
     school: 'light',
     description: 'Зона на 2 хода: союзники лечатся на 8 в начале хода, нежить получает 10 урона.',
@@ -151,6 +161,7 @@ const light: SkillDef[] = [
 const blood: SkillDef[] = [
   {
     id: 'blood_blade',
+    icon: 'bloody-sword',
     name: 'Кровавый клинок',
     school: 'blood',
     description: 'Стоит 5 здоровья. Половина нанесённого урона возвращается здоровьем.',
@@ -164,6 +175,7 @@ const blood: SkillDef[] = [
   },
   {
     id: 'bloodletting',
+    icon: 'bleeding-wound',
     name: 'Кровопускание',
     school: 'blood',
     description: 'Урон и кровотечение: цель теряет 4 здоровья за каждую пройденную клетку.',
@@ -179,6 +191,7 @@ const blood: SkillDef[] = [
   },
   {
     id: 'harvest',
+    icon: 'reaper-scythe',
     name: 'Жатва',
     school: 'blood',
     description: 'Весь нанесённый урон возвращается здоровьем.',
@@ -192,6 +205,7 @@ const blood: SkillDef[] = [
   },
   {
     id: 'blood_sacrifice',
+    icon: 'sacrificial-dagger',
     name: 'Кровавая жертва',
     school: 'blood',
     description: 'Стоит 15% текущего здоровья. +30% ко всему урону на 2 хода.',
@@ -206,6 +220,7 @@ const blood: SkillDef[] = [
   },
   {
     id: 'blood_ritual',
+    icon: 'pentacle',
     name: 'Кровавый ритуал',
     school: 'blood',
     description: 'Превращает 20 здоровья в 20 маны.',
@@ -223,6 +238,7 @@ const blood: SkillDef[] = [
 const space: SkillDef[] = [
   {
     id: 'blink',
+    icon: 'teleport',
     name: 'Скачок',
     school: 'space',
     description: 'Телепорт на свободную клетку. Линия обзора не нужна.',
@@ -235,6 +251,7 @@ const space: SkillDef[] = [
   },
   {
     id: 'repulse',
+    icon: 'push',
     name: 'Отталкивание',
     school: 'space',
     description: 'Отбрасывает цель на 3 клетки. Удар о препятствие или юнита наносит урон.',
@@ -251,6 +268,7 @@ const space: SkillDef[] = [
   },
   {
     id: 'toss',
+    icon: 'falling',
     name: 'Подброс',
     school: 'space',
     description: 'Телепортирует врага в воздух, и тот падает. −1 ОП на следующий ход.',
@@ -268,6 +286,7 @@ const space: SkillDef[] = [
   },
   {
     id: 'swap',
+    icon: 'body-swapping',
     name: 'Обмен',
     school: 'space',
     description: 'Поменяться местами с любым юнитом.',
@@ -281,6 +300,7 @@ const space: SkillDef[] = [
   },
   {
     id: 'compress',
+    icon: 'implosion',
     name: 'Сжатие',
     school: 'space',
     description: 'Сминает пространство вокруг цели. Игнорирует 50% сопротивлений.',
@@ -297,6 +317,7 @@ const space: SkillDef[] = [
 const body: SkillDef[] = [
   {
     id: 'energy_armor',
+    icon: 'energy-shield',
     name: 'Энергодоспех',
     school: 'body',
     description: 'Щит на 20 урона на 2 хода.',
@@ -310,6 +331,7 @@ const body: SkillDef[] = [
   },
   {
     id: 'dash',
+    icon: 'sprint',
     name: 'Рывок',
     school: 'body',
     description: 'Рывок к врагу по прямой. Следующий удар оружием в этот ход +20%.',
@@ -323,6 +345,7 @@ const body: SkillDef[] = [
   },
   {
     id: 'haste',
+    icon: 'run',
     name: 'Ускорение',
     school: 'body',
     description: '+2 ОП на этот ход.',
@@ -336,6 +359,7 @@ const body: SkillDef[] = [
   },
   {
     id: 'power_strike',
+    icon: 'punch-blast',
     name: 'Усиленный удар',
     school: 'body',
     description: 'Следующий удар оружием в этот ход +40%.',
@@ -348,6 +372,7 @@ const body: SkillDef[] = [
   },
   {
     id: 'vigilance',
+    icon: 'eye-target',
     name: 'Бдительность',
     school: 'body',
     description:
@@ -366,6 +391,7 @@ const body: SkillDef[] = [
 const monster: SkillDef[] = [
   {
     id: 'm_bite',
+    icon: 'fangs',
     name: 'Укус',
     school: 'monster',
     description: 'Зубов много, манер — нет.',
@@ -378,6 +404,7 @@ const monster: SkillDef[] = [
   },
   {
     id: 'm_spine',
+    icon: 'spiked-tail',
     name: 'Плевок иглами',
     school: 'monster',
     description: 'Метко, мерзко и немного липко.',
@@ -390,6 +417,7 @@ const monster: SkillDef[] = [
   },
   {
     id: 'm_bone_slam',
+    icon: 'broken-bone',
     name: 'Удар костью',
     school: 'monster',
     description: 'Собственной. Не спрашивайте.',

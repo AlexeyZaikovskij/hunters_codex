@@ -572,7 +572,7 @@ button {
 .slot {
   position: relative;
   width: 104px;
-  height: 64px;
+  height: 90px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-top: 3px solid var(--line);
@@ -580,7 +580,8 @@ button {
   padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 3px;
   text-align: left;
   transition: transform 0.1s, background 0.1s;
   overflow: hidden;
@@ -598,6 +599,81 @@ button {
 
 .slot.disabled {
   opacity: 0.42;
+}
+
+.slot-icon {
+  flex-shrink: 0;
+  color: var(--slot-color, var(--text));
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--slot-color, transparent) 45%, transparent));
+}
+
+.slot .slot-cost {
+  margin-top: auto;
+}
+
+.slot.school-fire {
+  --slot-color: var(--fire);
+}
+.slot.school-light {
+  --slot-color: var(--light);
+}
+.slot.school-blood {
+  --slot-color: var(--blood);
+}
+.slot.school-space {
+  --slot-color: var(--space);
+}
+.slot.school-body {
+  --slot-color: var(--body);
+}
+.slot.school-weapon {
+  --slot-color: #d0d4e0;
+}
+.slot.school-focus {
+  --slot-color: var(--mana);
+}
+.slot.end-turn {
+  --slot-color: var(--accent);
+}
+
+.with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.with-icon svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.skill-list {
+  list-style: none;
+  padding-left: 0 !important;
+}
+
+.skill-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.glyph svg {
+  color: #10131c;
+}
+
+.school-fire .skill-list svg {
+  color: var(--fire);
+}
+.school-light .skill-list svg {
+  color: var(--light);
+}
+.school-blood .skill-list svg {
+  color: var(--blood);
+}
+.school-space .skill-list svg {
+  color: var(--space);
 }
 
 .slot.school-fire {
@@ -788,4 +864,14 @@ button {
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.credits {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.credits a {
+  color: inherit;
 }

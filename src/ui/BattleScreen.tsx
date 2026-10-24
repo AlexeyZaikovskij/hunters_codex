@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { BattleSession, Mode } from '../game/session';
 import { PhaserView } from '../game/PhaserView';
+import { Icon } from './Icon';
+import { UI_ICONS } from '../data/ui-icons';
 import { SKILLS, SCHOOL_NAMES } from '../data/skills';
 import { RULES, type ActionPreview, type Battle } from '../engine/battle';
 import type { DamageType, Status, StatusId, Unit } from '../engine/types';
@@ -125,7 +127,7 @@ function UnitCard({ unit, title, preview }: { unit: Unit; title?: string; previe
       {title && <div className="card-label">{title}</div>}
       <div className="unit-name">
         <span className="glyph" style={{ background: `#${unit.color.toString(16).padStart(6, '0')}` }}>
-          {unit.glyph}
+          {unit.icon ? <Icon name={unit.icon} size={16} /> : unit.glyph}
         </span>
         {unit.name}
         {unit.tags.includes('undead') && <span className="tag">нежить</span>}
@@ -259,7 +261,7 @@ export function BattleScreen({
               .map((u) => (
                 <li key={u.id} className={`${u.id === battle.current.id ? 'current' : ''} team-${u.team}`}>
                   <span className="glyph small" style={{ background: `#${u.color.toString(16).padStart(6, '0')}` }}>
-                    {u.glyph}
+                    {u.icon ? <Icon name={u.icon} size={13} /> : u.glyph}
                   </span>
                   {u.name}
                   <span className="mono">{u.hp}</span>
@@ -349,6 +351,7 @@ export function BattleScreen({
                 onMouseLeave={() => setInfo(null)}
               >
                 <span className="key">{i + 1}</span>
+                <Icon name={s.icon} size={26} className="slot-icon" />
                 <span className="slot-name">{s.name}</span>
                 <span className="slot-cost">
                   {s.apCost} ОД{s.manaCost ? ` · ${s.manaCost} М` : ''}
@@ -372,6 +375,7 @@ export function BattleScreen({
             onMouseLeave={() => setInfo(null)}
           >
             <span className="key">Q</span>
+            <Icon name={weapon.icon} size={26} className="slot-icon" />
             <span className="slot-name">{weapon.name}</span>
             <span className="slot-cost">{weapon.apCost} ОД</span>
           </button>
@@ -388,11 +392,13 @@ export function BattleScreen({
             onMouseLeave={() => setInfo(null)}
           >
             <span className="key">F</span>
+            <Icon name={UI_ICONS.focus} size={26} className="slot-icon" />
             <span className="slot-name">Сосредо&shy;точиться</span>
             <span className="slot-cost">{RULES.focusAp} ОД</span>
           </button>
           <button className="slot end-turn" disabled={!myTurn} onClick={() => void session.endTurn()}>
             <span className="key">␣</span>
+            <Icon name={UI_ICONS.endTurn} size={26} className="slot-icon" />
             <span className="slot-name">Конец хода</span>
           </button>
         </div>
