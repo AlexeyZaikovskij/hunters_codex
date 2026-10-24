@@ -36,13 +36,19 @@ const fire: SkillDef[] = [
     id: 'ignite',
     name: 'Поджог',
     school: 'fire',
-    description: 'Клетка горит 2 хода. Обжигает любого, кто войдёт в неё или закончит на ней ход.',
-    apCost: 2,
-    manaCost: 10,
+    description:
+      'Земля радиусом 1 горит 2 хода. Враги в огне загораются сразу; каждый шаг по горящей клетке или конец хода на ней обжигает на 8.',
+    apCost: 3,
+    manaCost: 15,
     range: [1, 4],
     needsLos: true,
     target: 'cell',
-    effects: [{ type: 'zone', zone: { kind: 'fire', damage: 10 }, duration: 2 }],
+    area: { shape: 'circle', radius: 1 },
+    cooldown: 2,
+    effects: [
+      { type: 'zone', zone: { kind: 'fire', damage: 8 }, duration: 2 },
+      { type: 'status', status: 'burn', duration: 2, value: 5 },
+    ],
   },
   {
     id: 'fire_wave',

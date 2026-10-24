@@ -571,11 +571,7 @@ export class Battle {
   }
 
   private finishTurn(unit: Unit, events: BattleEvent[]) {
-    if (unit.alive) {
-      for (const zone of this.zonesAt(unit.pos))
-        if (zone.def.kind === 'fire' && zone.def.damage)
-          this.dealDamage(unit, { attacker: null, from: null, base: zone.def.damage, damageType: 'fire', label: 'Огонь под ногами' }, events);
-    }
+    if (unit.alive) this.burnFromZones(unit, events);
     unit.statuses = unit.statuses
       .map((s) => ({ ...s, duration: s.duration - 1 }))
       .filter((s) => s.duration > 0);
@@ -590,9 +586,14 @@ export class Battle {
 
   /** Эффекты при входе на клетку: горящая земля. */
   private enterCell(unit: Unit, events: BattleEvent[]) {
+    this.burnFromZones(unit, events);
+  }
+
+  /** Горящая земля обжигает только врагов того, кто её поджёг. */
+  private burnFromZones(unit: Unit, events: BattleEvent[]) {
     for (const zone of this.zonesAt(unit.pos)) {
       if (!unit.alive) return;
-      if (zone.def.kind === 'fire' && zone.def.damage)
+      if (zone.def.kind === 'fire' && zone.def.damage && unit.team !== zone.ownerTeam)
         this.dealDamage(unit, { attacker: null, from: null, base: zone.def.damage, damageType: 'fire', label: 'Огонь под ногами' }, events);
     }
   }

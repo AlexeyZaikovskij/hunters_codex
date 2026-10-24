@@ -52,6 +52,20 @@ describe('Battle', () => {
     expect(mob.hp).toBeLessThan(hpBefore);
   });
 
+  it('ignite sets enemies in the area on fire and spares the caster', () => {
+    const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 0, y: 2 });
+    const mob = createMonster('gnawer', 'm1', { x: 3, y: 2 });
+    mob.initiative = 0;
+    const battle = setup([hero, mob]);
+    const res = battle.useSkill('hero', 'ignite', { x: 2, y: 2 });
+    expect(res.ok).toBe(true);
+    expect(battle.zones[0].cells).toHaveLength(5);
+    expect(battle.statusValue(mob, 'burn')).toBe(5);
+    // Герой заходит в собственный огонь без урона.
+    battle.move('hero', { x: 1, y: 2 });
+    expect(hero.hp).toBe(hero.maxHp);
+  });
+
   it('obstacles block line of sight', () => {
     const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 0, y: 0 });
     const mob = createMonster('gnawer', 'm1', { x: 4, y: 0 });
