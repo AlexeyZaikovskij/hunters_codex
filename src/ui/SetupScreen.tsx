@@ -208,7 +208,9 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
         <p className="hint">
           {art === 'pixel'
             ? 'Пиксель-арт Kenney: готовые тайлы и персонажи.'
-            : 'Нарисовано кодом: фактурный пол, объёмные камни, векторные фигурки.'}{' '}
+            : art === 'iso'
+              ? 'Изометрия: поле под углом, персонажи — анимированные 3D-модели (первая загрузка — пара секунд).'
+              : 'Нарисовано кодом: фактурный пол, объёмные камни, векторные фигурки.'}{' '}
           Для сравнения запустите одно и то же зерно в обоих вариантах.
         </p>
       </section>
@@ -239,6 +241,14 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
         . Пиксель-арт:{' '}
         <a href="https://kenney.nl" target="_blank" rel="noreferrer">
           Kenney
+        </a>{' '}
+        (CC0). 3D-модели:{' '}
+        <a href="https://kaylousberg.com" target="_blank" rel="noreferrer">
+          KayKit (Kay Lousberg)
+        </a>
+        ,{' '}
+        <a href="https://quaternius.com" target="_blank" rel="noreferrer">
+          Quaternius
         </a>{' '}
         (CC0).
       </footer>

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { BattleSession } from './session';
 import type { BattleEvent, DamageType, Dir, Pos, Unit } from '../engine/types';
+import type { Grid } from '../engine/grid';
 import { SKILLS } from '../data/skills';
 import { ICONS } from '../data/icons';
 import { key, samePos } from '../engine/grid';
@@ -8,9 +9,12 @@ import { Rng } from '../engine/rng';
 import { SHEETS, TILESETS, UNIT_SPRITES, type SheetId, type SpriteRef } from '../data/sprites';
 import dungeonSheetUrl from '../assets/kenney/tiny-dungeon.png';
 import cavesSheetUrl from '../assets/kenney/roguelike-caves.png';
-import { getArtStyle } from './art';
-import { paintBoard } from './painted';
+import { getArtStyle, type ArtStyle } from './art';
+import { paintBoard, paintObstacle } from './painted';
+import { isoProjection, topDownProjection, type Projection } from './projection';
 import { UNIT_ART, svgDataUrl } from './painted-units';
+import type { UnitSheet } from './models3d';
+import { LOOPED_ANIMS, type ModelAnim } from '../data/models';
 
 // Отрисовка поля боя. Логики боя здесь нет: сцена только показывает состояние и проигрывает события.
 
@@ -19,6 +23,15 @@ const TILE = 16;
 export const CELL = TILE * 4;
 /** Персонажи чуть меньше клетки, чтобы над ними помещалась полоска здоровья. */
 const UNIT_SCALE = 4;
+/** Ширина ромба клетки в изометрии. */
+const ISO_TILE = 112;
+/** Подписи, вспышки и всплывающий текст — всегда поверх персонажей. */
+const TOP_DEPTH = 1000;
+
+/** Проекция поля под выбранную графику. Её же берёт PhaserView для размера холста. */
+export function makeProjection(art: ArtStyle, grid: Grid): Projection {
+  return art === 'iso' ? isoProjection(grid.width, grid.height, ISO_TILE) : topDownProjection(grid.width, grid.height, CELL);
+}
 
 const SHEET_URLS: Record<SheetId, string> = { dungeon: dungeonSheetUrl, caves: cavesSheetUrl };
 const sheetKey = (id: SheetId) => `sheet:${id}`;
@@ -55,21 +68,32 @@ const SCHOOL_COLORS: Record<string, number> = {
   weapon: 0xffffff,
 };
 
-const FACING_ANGLE: Record<Dir, number> = { right: 0, down: 90, left: 180, up: 270 };
-
 interface UnitView {
   container: Phaser.GameObjects.Container;
   /** Белая вспышка при попадании. */
   flash: (on: boolean) => void;
   /** Спрайт смотрит влево или вправо; вверх/вниз показывает только треугольник. */
-  sprite?: Phaser.GameObjects.Image;
+  sprite?: Phaser.GameObjects.Image | Phaser.GameObjects.Sprite;
   facing: Phaser.GameObjects.Triangle;
   hpBar: Phaser.GameObjects.Rectangle;
   shieldBar: Phaser.GameObjects.Rectangle;
   ring: Phaser.GameObjects.Shape;
+  /** Высота полоски здоровья над точкой клетки — над ней же подписи и всплывающие числа. */
+  barsY: number;
+  /** 3D-модель: анимации по направлениям. */
+  model?: ModelState;
 }
 
-const center = (p: Pos) => ({ x: p.x * CELL + CELL / 2, y: p.y * CELL + CELL / 2 });
+interface ModelState {
+  kind: string;
+  sheet: UnitSheet;
+  dir: Dir;
+  anim: ModelAnim;
+}
+
+/** Масштаб кадров 3D-моделей на поле: человек ростом ~75 px. */
+const MODEL_SCALE = 0.7;
+const modelAnimKey = (kind: string, anim: ModelAnim, dir: Dir) => `${kind}:${anim}:${dir}`;
 
 /** Иконки грузятся белыми, нужный цвет даёт tint. */
 const iconKey = (name: string) => `icon:${name}`;
@@ -90,14 +114,20 @@ export class BattleScene extends Phaser.Scene {
   private unsubscribe?: () => void;
   /** Графика выбирается на экране настройки и не меняется посреди боя. */
   private art = getArtStyle();
+  private proj!: Projection;
 
   constructor() {
     super('battle');
   }
 
-  init(data: { session: BattleSession }) {
+  /** Спрайты 3D-моделей (если выбраны и успели отрендериться). */
+  private sheets: Record<string, UnitSheet> = {};
+
+  init(data: { session: BattleSession; sheets?: Record<string, UnitSheet> }) {
     this.session = data.session;
+    this.sheets = data.sheets ?? {};
     this.art = getArtStyle();
+    this.proj = makeProjection(this.art, this.session.battle.grid);
   }
 
   preload() {
@@ -105,7 +135,7 @@ export class BattleScene extends Phaser.Scene {
       this.load.spritesheet(sheetKey(id), SHEET_URLS[id], { frameWidth: TILE, frameHeight: TILE, spacing: def.spacing });
     for (const [name, body] of Object.entries(ICONS))
       this.load.svg(iconKey(name), iconDataUrl(body), { width: ICON_TEXTURE_SIZE, height: ICON_TEXTURE_SIZE });
-    if (this.art === 'painted')
+    if (this.art !== 'pixel')
       for (const [kind, art] of Object.entries(UNIT_ART)) this.load.svg(artKey(kind), svgDataUrl(art), { width: 128, height: 128 });
   }
 
@@ -115,8 +145,9 @@ export class BattleScene extends Phaser.Scene {
     this.drawBoard();
     this.zonesLayer = this.add.graphics();
     this.overlay = this.add.graphics();
+    this.registerModelSheets();
     for (const u of this.session.battle.units) this.createUnitView(u);
-    this.previewLayer = this.add.container(0, 0).setDepth(20);
+    this.previewLayer = this.add.container(0, 0).setDepth(TOP_DEPTH);
 
     this.input.mouse?.disableContextMenu();
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.session.setHover(this.cellAt(p)));
@@ -135,7 +166,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private cellAt(p: Phaser.Input.Pointer): Pos | null {
-    const cell = { x: Math.floor(p.worldX / CELL), y: Math.floor(p.worldY / CELL) };
+    const cell = this.proj.cellAt(p.worldX, p.worldY);
     return this.session.battle.grid.inBounds(cell) ? cell : null;
   }
 
@@ -151,11 +182,14 @@ export class BattleScene extends Phaser.Scene {
   private drawBoard() {
     const { grid } = this.session.battle;
     const { map } = this.session.setup;
-    if (this.art === 'painted') {
-      const canvas = this.textures.createCanvas('board', grid.width * CELL, grid.height * CELL)!;
-      paintBoard(canvas.getContext(), grid, map.style ?? 'ruins', map.seed ?? 1, CELL);
+    if (this.art !== 'pixel') {
+      const style = map.style ?? 'ruins';
+      const seed = map.seed ?? 1;
+      const canvas = this.textures.createCanvas('board', this.proj.width, this.proj.height)!;
+      paintBoard(canvas.getContext(), grid, style, seed, CELL, this.proj);
       canvas.refresh();
       this.add.image(0, 0, 'board').setOrigin(0);
+      if (this.proj.iso) this.drawIsoObstacles();
       return;
     }
     const set = TILESETS[map.style ?? 'ruins'];
@@ -180,14 +214,86 @@ export class BattleScene extends Phaser.Scene {
     for (let y = 0; y <= grid.height; y++) g.lineBetween(0, y * CELL, grid.width * CELL, y * CELL);
   }
 
+  /** В изометрии каждое препятствие — отдельная картинка со своей глубиной: персонаж может зайти за камень. */
+  private drawIsoObstacles() {
+    const { grid } = this.session.battle;
+    const { map } = this.session.setup;
+    const w = ISO_TILE * 1.3;
+    const h = ISO_TILE * 1.3;
+    // Центр клетки на земле внутри маленького холста.
+    const gx = w / 2;
+    const gy = h - ISO_TILE * 0.38;
+    for (const k of grid.obstacles) {
+      const [x, y] = k.split(',').map(Number);
+      const tex = this.textures.createCanvas(`obstacle:${k}`, w, h)!;
+      paintObstacle(tex.getContext(), map.style ?? 'ruins', map.seed ?? 1, { x, y }, gx, gy, ISO_TILE);
+      tex.refresh();
+      const c = this.proj.center({ x, y });
+      this.add.image(c.x - gx, c.y - gy, `obstacle:${k}`).setOrigin(0).setDepth(10 + this.proj.depth({ x, y }));
+    }
+  }
+
   // ───────────── Юниты ─────────────
 
+  /** Кадры моделей → текстуры и анимации Phaser: `вид:анимация:направление`. */
+  private registerModelSheets() {
+    for (const [kind, sheet] of Object.entries(this.sheets)) {
+      const texKey = `model:${kind}`;
+      const tex = this.textures.addCanvas(texKey, sheet.canvas)!;
+      const fs = sheet.frameSize;
+      const columns = sheet.canvas.width / fs;
+      const total = (sheet.canvas.width / fs) * (sheet.canvas.height / fs);
+      for (let i = 0; i < total; i++) tex.add(i, 0, (i % columns) * fs, Math.floor(i / columns) * fs, fs, fs);
+      for (const [anim, byDir] of Object.entries(sheet.frames) as [ModelAnim, Record<Dir, { start: number; count: number }>][])
+        for (const [dir, f] of Object.entries(byDir) as [Dir, { start: number; count: number }][]) {
+          const duration = sheet.durations[anim] ?? 1;
+          this.anims.create({
+            key: modelAnimKey(kind, anim, dir),
+            frames: Array.from({ length: f.count }, (_, i) => ({ key: texKey, frame: f.start + i })),
+            // Родная скорость анимации, но не медленнее 6 и не быстрее 18 кадров в секунду.
+            frameRate: Phaser.Math.Clamp(f.count / duration, 6, 18),
+            repeat: LOOPED_ANIMS[anim] ? -1 : 0,
+          });
+        }
+    }
+  }
+
+  /** Проиграть анимацию модели (нет такой — стоять в покое). Одноразовые возвращаются в покой сами. */
+  private act(view: UnitView | undefined, anim: ModelAnim) {
+    const m = view?.model;
+    if (!view || !m || !(view.sprite instanceof Phaser.GameObjects.Sprite)) return 0;
+    const chosen: ModelAnim = m.sheet.frames[anim] ? anim : anim === 'cast' && m.sheet.frames.attack ? 'attack' : 'idle';
+    m.anim = chosen;
+    const sprite = view.sprite;
+    sprite.play(modelAnimKey(m.kind, chosen, m.dir));
+    if (!LOOPED_ANIMS[chosen] && chosen !== 'death')
+      sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        if (m.anim === chosen) this.act(view, 'idle');
+      });
+    // Сколько ждать до «момента удара» — середина одноразовой анимации.
+    const frames = m.sheet.frames[chosen]?.[m.dir]?.count ?? 0;
+    const rate = Phaser.Math.Clamp(frames / (m.sheet.durations[chosen] ?? 1), 6, 18);
+    return LOOPED_ANIMS[chosen] ? 0 : (frames / rate) * 1000;
+  }
+
   private createUnitView(u: Unit) {
-    if (this.art === 'painted' && u.kind && UNIT_ART[u.kind])
+    const sheet = u.kind ? this.sheets[u.kind] : undefined;
+    if (sheet && u.kind) {
+      const kind = u.kind;
+      const idle = sheet.frames.idle![u.facing];
+      const model: ModelState = { kind, sheet, dir: u.facing, anim: 'idle' };
+      return this.createSpriteView(
+        u,
+        (s) => s.sprite(0, 6, `model:${kind}`, idle.start).setOrigin(sheet.origin.x, sheet.origin.y).setScale(MODEL_SCALE),
+        -96,
+        { model, groundY: 6 },
+      );
+    }
+    if (this.art !== 'pixel' && u.kind && UNIT_ART[u.kind])
       return this.createSpriteView(u, (s) => s.image(0, -12, artKey(u.kind!)).setDisplaySize(80, 80), -46);
     const ref = u.kind ? UNIT_SPRITES[u.kind] : undefined;
     if (ref) return this.createSpriteView(u, (s) => s.image(0, -4, sheetKey(ref.sheet), ref.frame).setScale(UNIT_SCALE));
-    const { x, y } = center(u.pos);
+    const { x, y } = this.proj.center(u.pos);
     const ring = this.add.circle(0, 0, 25).setStrokeStyle(3, COLORS.current).setVisible(false);
     const shadow = this.add.ellipse(0, 16, 40, 12, 0x000000, 0.4);
     const team = this.add.circle(0, 0, 21).setStrokeStyle(3, u.team === 'player' ? COLORS.player : COLORS.enemy);
@@ -205,9 +311,9 @@ export class BattleScene extends Phaser.Scene {
     const hpBar = this.add.rectangle(-20, -31, 40, 6, u.team === 'player' ? 0x5be38f : 0xff5d5d).setOrigin(0, 0.5);
     const shieldBar = this.add.rectangle(-20, -36, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
     const container = this.add.container(x, y, [ring, shadow, team, body, shine, glyph, facing, hpBack, hpBar, shieldBar]);
-    container.setDepth(10 + u.pos.y);
+    container.setDepth(10 + this.proj.depth(u.pos));
     const flash = (on: boolean) => body.setFillStyle(on ? 0xffffff : u.color);
-    const view = { container, flash, facing, hpBar, shieldBar, ring };
+    const view = { container, flash, facing, hpBar, shieldBar, ring, barsY: -31 };
     this.views.set(u.id, view);
     this.setFacing(view, u.facing);
   }
@@ -215,32 +321,46 @@ export class BattleScene extends Phaser.Scene {
   /** Персонаж-картинка: овал команды под ногами, спрайт, полоски здоровья и щита сверху. */
   private createSpriteView(
     u: Unit,
-    makeSprite: (add: Phaser.GameObjects.GameObjectFactory) => Phaser.GameObjects.Image,
+    makeSprite: (add: Phaser.GameObjects.GameObjectFactory) => Phaser.GameObjects.Image | Phaser.GameObjects.Sprite,
     barsY = -36,
+    opts: { model?: ModelState; groundY?: number } = {},
   ) {
-    const { x, y } = center(u.pos);
+    const { x, y } = this.proj.center(u.pos);
     const teamColor = u.team === 'player' ? COLORS.player : COLORS.enemy;
-    const ring = this.add.ellipse(0, 22, 58, 22).setStrokeStyle(3, COLORS.current).setVisible(false);
-    const base = this.add.ellipse(0, 22, 50, 16, teamColor, 0.35).setStrokeStyle(2, teamColor, 0.9);
+    const groundY = opts.groundY ?? 22;
+    const ring = this.add.ellipse(0, groundY, 58, 22).setStrokeStyle(3, COLORS.current).setVisible(false);
+    const base = this.add.ellipse(0, groundY, 50, 16, teamColor, 0.35).setStrokeStyle(2, teamColor, 0.9);
     const sprite = makeSprite(this.add);
     const facing = this.add.triangle(0, 0, 0, -5, 0, 5, 8, 0, teamColor).setOrigin(0, 0.5);
     const hpBack = this.add.rectangle(-20, barsY, 40, 6, 0x000000, 0.7).setOrigin(0, 0.5);
     const hpBar = this.add.rectangle(-20, barsY, 40, 6, u.team === 'player' ? 0x5be38f : 0xff5d5d).setOrigin(0, 0.5);
     const shieldBar = this.add.rectangle(-20, barsY - 5, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
     const container = this.add.container(x, y, [ring, base, facing, sprite, hpBack, hpBar, shieldBar]);
-    container.setDepth(10 + u.pos.y);
+    container.setDepth(10 + this.proj.depth(u.pos));
     const flash = (on: boolean) => (on ? sprite.setTintFill(0xffffff) : sprite.clearTint());
-    const view = { container, flash, sprite, facing, hpBar, shieldBar, ring };
+    const view: UnitView = { container, flash, sprite, facing, hpBar, shieldBar, ring, barsY, model: opts.model };
     this.views.set(u.id, view);
     this.setFacing(view, u.facing);
   }
 
   private setFacing(view: UnitView, dir: Dir) {
-    const angle = Phaser.Math.DegToRad(FACING_ANGLE[dir]);
+    const angle = this.proj.angle(dir);
+    if (view.model) {
+      // Модель отрендерена во всех 4 направлениях: просто переключаем анимацию на нужное.
+      const m = view.model;
+      view.facing.setPosition(Math.cos(angle) * 28, 6 + Math.sin(angle) * 11).setRotation(angle);
+      if (m.dir !== dir || !(view.sprite as Phaser.GameObjects.Sprite).anims.isPlaying) {
+        m.dir = dir;
+        if (LOOPED_ANIMS[m.anim]) (view.sprite as Phaser.GameObjects.Sprite).play(modelAnimKey(m.kind, m.anim, dir), true);
+      }
+      return;
+    }
     if (view.sprite) {
       // Треугольник у ног, на краю овала команды.
       view.facing.setPosition(Math.cos(angle) * 28, 22 + Math.sin(angle) * 11).setRotation(angle);
-      if (dir === 'left' || dir === 'right') view.sprite.setFlipX(dir === 'left');
+      // Фигурки нарисованы лицом вправо; в изометрии «вниз» по сетке — это влево-вниз на экране.
+      // Вид сверху: вверх/вниз не меняют сторону, куда смотрит спрайт.
+      if (this.proj.iso || dir === 'left' || dir === 'right') view.sprite.setFlipX(Math.cos(angle) < 0);
       return;
     }
     view.facing.setPosition(Math.cos(angle) * 22, Math.sin(angle) * 22).setRotation(angle);
@@ -257,8 +377,8 @@ export class BattleScene extends Phaser.Scene {
     const current = this.session.battle.result === 'ongoing' ? this.session.battle.current.id : null;
     for (const u of this.session.battle.units) {
       const view = this.views.get(u.id)!;
-      const { x, y } = center(u.pos);
-      view.container.setPosition(x, y).setDepth(10 + u.pos.y);
+      const { x, y } = this.proj.center(u.pos);
+      view.container.setPosition(x, y).setDepth(10 + this.proj.depth(u.pos));
       view.container.setVisible(u.alive).setAlpha(1);
       this.setFacing(view, u.facing);
       this.setHp(view, u, u.hp);
@@ -279,24 +399,22 @@ export class BattleScene extends Phaser.Scene {
     this.zonesLayer.clear();
     for (const z of battle.zones) {
       const color = z.def.kind === 'fire' ? COLORS.fireZone : COLORS.holyZone;
-      for (const c of z.cells) {
-        this.zonesLayer.fillStyle(color, z.def.kind === 'fire' ? 0.35 : 0.22);
-        this.zonesLayer.fillRect(c.x * CELL + 2, c.y * CELL + 2, CELL - 4, CELL - 4);
-      }
+      this.zonesLayer.fillStyle(color, z.def.kind === 'fire' ? 0.35 : 0.22);
+      for (const c of z.cells) this.zonesLayer.fillPoints(this.proj.corners(c, 0.03), true);
     }
 
     const fill = (cells: Pos[], color: number, alpha: number) => {
       o.fillStyle(color, alpha);
-      for (const c of cells) o.fillRect(c.x * CELL + 3, c.y * CELL + 3, CELL - 6, CELL - 6);
+      for (const c of cells) o.fillPoints(this.proj.corners(c, 0.05), true);
     };
     const outline = (cells: Pos[], color: number) => {
       o.lineStyle(2, color, 0.95);
-      for (const c of cells) o.strokeRect(c.x * CELL + 3, c.y * CELL + 3, CELL - 6, CELL - 6);
+      for (const c of cells) o.strokePoints(this.proj.corners(c, 0.05), true);
     };
 
     if (hover) {
       o.lineStyle(2, 0xffffff, 0.35);
-      o.strokeRect(hover.x * CELL + 1, hover.y * CELL + 1, CELL - 2, CELL - 2);
+      o.strokePoints(this.proj.corners(hover, 0.02), true);
     }
     if (!this.session.isPlayerTurn) return;
     const hero = this.session.hero;
@@ -346,9 +464,9 @@ export class BattleScene extends Phaser.Scene {
       const range = p.kind === 'heal' ? [p.min, p.max] : [p.hpLossMin, p.hpLossMax];
       const value = range[0] === range[1] ? `${range[0]}` : `${range[0]}–${range[1]}`;
       const text = p.kind === 'heal' ? `+${value}` : `−${value}${p.lethal === 'sure' ? ' ☠' : p.lethal === 'maybe' ? ' ☠?' : ''}`;
-      const c = center(u.pos);
+      const c = this.proj.center(u.pos);
       const label = this.add
-        .text(c.x, c.y - CELL / 2 - (this.art === 'painted' ? 26 : 14), text, {
+        .text(c.x, c.y + (this.views.get(u.id)?.barsY ?? -36) - 10, text, {
           fontFamily: 'Rubik, sans-serif',
           fontSize: '15px',
           fontStyle: 'bold',
@@ -370,7 +488,7 @@ export class BattleScene extends Phaser.Scene {
   /** Иконка действия всплывает над юнитом и тает. */
   private popIcon(x: number, y: number, name: string | undefined, color: number) {
     if (!name || !this.textures.exists(iconKey(name))) return;
-    const icon = this.add.image(x, y - 34, iconKey(name)).setDisplaySize(30, 30).setTint(color).setDepth(95);
+    const icon = this.add.image(x, y - 34, iconKey(name)).setDisplaySize(30, 30).setTint(color).setDepth(TOP_DEPTH);
     this.tweens.add({
       targets: icon,
       y: y - 52,
@@ -395,7 +513,7 @@ export class BattleScene extends Phaser.Scene {
     const view = this.views.get(unitId);
     if (!view) return;
     const t = this.add
-      .text(view.container.x + Phaser.Math.Between(-8, 8), view.container.y - 30, text, {
+      .text(view.container.x + Phaser.Math.Between(-8, 8), view.container.y + view.barsY + 6, text, {
         fontFamily: 'Rubik, sans-serif',
         fontSize: big ? '24px' : '18px',
         fontStyle: 'bold',
@@ -404,7 +522,7 @@ export class BattleScene extends Phaser.Scene {
         strokeThickness: 4,
       })
       .setOrigin(0.5)
-      .setDepth(100);
+      .setDepth(TOP_DEPTH);
     this.tweens.add({ targets: t, y: t.y - 36, alpha: 0, duration: 1100, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
   }
 
@@ -422,27 +540,32 @@ export class BattleScene extends Phaser.Scene {
           break;
         case 'move':
           if (!view) break;
+          this.act(view, 'walk');
           for (let i = 0; i < e.path.length; i++) {
             const step = e.path[i];
             const prev = i === 0 ? null : e.path[i - 1];
             if (prev) this.setFacing(view, prev.x === step.x ? (step.y > prev.y ? 'down' : 'up') : step.x > prev.x ? 'right' : 'left');
             else {
-              const from = { x: Math.floor(view.container.x / CELL), y: Math.floor(view.container.y / CELL) };
+              const from = this.proj.cellAt(view.container.x, view.container.y);
               this.setFacing(view, from.x === step.x ? (step.y > from.y ? 'down' : 'up') : step.x > from.x ? 'right' : 'left');
             }
-            const c = center(step);
+            const c = this.proj.center(step);
             await this.tween({ targets: view.container, x: c.x, y: c.y, duration: 140, ease: 'Sine.easeInOut' });
-            view.container.setDepth(10 + step.y);
+            view.container.setDepth(10 + this.proj.depth(step));
           }
+          this.act(view, 'idle');
           break;
         case 'teleport':
           if (!view) break;
           await this.tween({ targets: view.container, alpha: 0, scale: 0.4, duration: 150 });
-          view.container.setPosition(center(e.to).x, center(e.to).y).setDepth(10 + e.to.y);
+          view.container.setPosition(this.proj.center(e.to).x, this.proj.center(e.to).y).setDepth(10 + this.proj.depth(e.to));
           await this.tween({ targets: view.container, alpha: 1, scale: 1, duration: 150 });
           break;
         case 'push':
-          if (view) await this.tween({ targets: view.container, x: center(e.to).x, y: center(e.to).y, duration: 180, ease: 'Cubic.easeOut' });
+          if (view) {
+            await this.tween({ targets: view.container, x: this.proj.center(e.to).x, y: this.proj.center(e.to).y, duration: 180, ease: 'Cubic.easeOut' });
+            view.container.setDepth(10 + this.proj.depth(e.to));
+          }
           break;
         case 'lift':
           if (view) {
@@ -455,15 +578,18 @@ export class BattleScene extends Phaser.Scene {
           const school = e.skillId === 'weapon' ? 'weapon' : SKILLS[e.skillId]?.school;
           const color = SCHOOL_COLORS[school ?? 'weapon'];
           if (view) {
+            // Модель замахивается или колдует; снаряд вылетает на середине движения.
+            const windup = this.act(view, e.skillId === 'weapon' ? 'attack' : 'cast');
+            if (windup) await this.wait(Math.min(450, windup * 0.5));
             const caster = view.container;
-            const to = center(e.target);
+            const to = this.proj.center(e.target);
             this.popIcon(caster.x, caster.y, this.castIcon(e.unitId, e.skillId), color);
             if (e.skillId === 'weapon' || SKILLS[e.skillId]?.target !== 'self') {
-              const orb = this.add.circle(caster.x, caster.y, 6, color).setDepth(90);
+              const orb = this.add.circle(caster.x, caster.y - 20, 6, color).setDepth(TOP_DEPTH);
               await this.tween({ targets: orb, x: to.x, y: to.y, duration: 160 });
               orb.destroy();
             }
-            const burst = this.add.circle(to.x, to.y, 10, color, 0.6).setDepth(90);
+            const burst = this.add.circle(to.x, to.y, 10, color, 0.6).setDepth(TOP_DEPTH);
             this.tweens.add({ targets: burst, scale: 3, alpha: 0, duration: 300, onComplete: () => burst.destroy() });
           }
           break;
@@ -474,6 +600,7 @@ export class BattleScene extends Phaser.Scene {
           if (e.absorbed > 0) this.float(e.unitId, `🛡${e.absorbed}`, '#9fd8ff');
           if (e.amount > 0 || e.absorbed === 0) this.float(e.unitId, `−${e.amount}${e.crit ? '!' : ''}`, DAMAGE_COLORS[e.damageType], e.crit);
           view.flash(true);
+          if (battle.unit(e.unitId).alive) this.act(view, 'hit');
           await this.wait(90);
           view.flash(false);
           await this.wait(140);
@@ -489,7 +616,11 @@ export class BattleScene extends Phaser.Scene {
           await this.wait(150);
           break;
         case 'death':
-          if (view) await this.tween({ targets: view.container, alpha: 0, scale: 0.5, duration: 300 });
+          if (view?.model) {
+            // Модель падает, потом тает.
+            await this.wait(Math.min(1200, this.act(view, 'death')));
+            await this.tween({ targets: view.container, alpha: 0, duration: 400 });
+          } else if (view) await this.tween({ targets: view.container, alpha: 0, scale: 0.5, duration: 300 });
           break;
         case 'log':
           break;
