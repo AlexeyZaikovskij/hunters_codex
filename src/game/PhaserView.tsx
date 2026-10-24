@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
-import { BattleScene, CELL } from './BattleScene';
+import { BattleScene, makeProjection } from './BattleScene';
+import { getArtStyle } from './art';
 import type { BattleSession } from './session';
 
 /** Встраивает поле боя Phaser в React. Игра создаётся один раз на сессию. */
@@ -8,12 +9,12 @@ export function PhaserView({ session }: { session: BattleSession }) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const { grid } = session.battle;
+    const proj = makeProjection(getArtStyle(), session.battle.grid);
     const game = new Phaser.Game({
       type: Phaser.AUTO,
       parent: host.current!,
-      width: grid.width * CELL,
-      height: grid.height * CELL,
+      width: proj.width,
+      height: proj.height,
       backgroundColor: '#12141c',
       scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
       banner: false,

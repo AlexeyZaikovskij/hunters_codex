@@ -1,6 +1,7 @@
 import { Rng } from '../engine/rng';
 import type { Grid } from '../engine/grid';
 import type { MapStyle } from '../data/maps';
+import type { Projection } from './projection';
 
 // «Рисованная» графика: поле рисуется кодом на холсте (градиенты, тени, фактура),
 // персонажи — векторные миниатюры (SVG). Сторонних картинок нет.
@@ -21,13 +22,20 @@ const PALETTES: Record<MapStyle, Palette> = {
 
 const hsl = (h: number, s: number, l: number, a = 1) => `hsla(${h}, ${s}%, ${l}%, ${a})`;
 
-/** Рисует всё статичное поле (пол, препятствия, сетку) на холсте размером grid × cell. */
-export function paintBoard(ctx: CanvasRenderingContext2D, grid: Grid, style: MapStyle, seed: number, cell: number) {
+/**
+ * Рисует статичное поле на холсте размером proj.width × proj.height.
+ * Пол рисуется в виде сверху (cell px на клетку), а проекция его наклоняет. В изометрии препятствия
+ * сюда не входят — они отдельные картинки, чтобы персонажи могли заходить за них (см. paintObstacle).
+ */
+export function paintBoard(ctx: CanvasRenderingContext2D, grid: Grid, style: MapStyle, seed: number, cell: number, proj: Projection) {
   const rng = new Rng(seed * 7 + 3);
   const pal = PALETTES[style];
   const W = grid.width * cell;
   const H = grid.height * cell;
 
+  if (proj.iso) paintIsoSlab(ctx, pal, grid, proj);
+  ctx.save();
+  ctx.setTransform(...proj.floorTransform(cell));
   for (let y = 0; y < grid.height; y++)
     for (let x = 0; x < grid.width; x++) paintFloorCell(ctx, rng, style, pal, x * cell, y * cell, cell);
 
@@ -45,6 +53,15 @@ export function paintBoard(ctx: CanvasRenderingContext2D, grid: Grid, style: Map
   }
   ctx.stroke();
 
+  // Виньетка: края поля темнее, взгляд собирается в центре.
+  const v = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  if (proj.iso) return;
   // Препятствия рисуем сверху вниз, чтобы тени нижних ложились поверх верхних клеток пола.
   for (let y = 0; y < grid.height; y++)
     for (let x = 0; x < grid.width; x++) {
@@ -52,13 +69,154 @@ export function paintBoard(ctx: CanvasRenderingContext2D, grid: Grid, style: Map
       if (style === 'ruins') paintRuinBlock(ctx, rng, pal, x * cell, y * cell, cell);
       else paintBoulder(ctx, rng, style, pal, x * cell, y * cell, cell);
     }
+}
 
-  // Виньетка: края поля темнее, взгляд собирается в центре.
-  const v = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
-  v.addColorStop(0, 'rgba(0,0,0,0)');
-  v.addColorStop(1, 'rgba(0,0,0,0.45)');
-  ctx.fillStyle = v;
-  ctx.fillRect(0, 0, W, H);
+/** Толщина плиты под полем в изометрии: две тёмные грани снизу — поле выглядит как остров. */
+function paintIsoSlab(ctx: CanvasRenderingContext2D, pal: Palette, grid: Grid, proj: Projection) {
+  const depth = 18;
+  const last = { x: grid.width - 1, y: grid.height - 1 };
+  const left = proj.corners({ x: 0, y: last.y })[3];
+  const bottom = proj.corners(last)[2];
+  const right = proj.corners({ x: last.x, y: 0 })[1];
+  const f = pal.floor;
+  const face = (a: { x: number; y: number }, b: { x: number; y: number }, l: number) => {
+    ctx.fillStyle = hsl(f.h, f.s, l);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(b.x, b.y + depth);
+    ctx.lineTo(a.x, a.y + depth);
+    ctx.closePath();
+    ctx.fill();
+  };
+  face(left, bottom, f.l - 8);
+  face(bottom, right, f.l - 13);
+}
+
+/**
+ * Препятствие для изометрии на отдельном холсте: (cx, cy) — центр клетки на земле, tileW — ширина ромба.
+ * Зерно своё у каждой клетки, поэтому вид не зависит от порядка отрисовки.
+ */
+export function paintObstacle(
+  ctx: CanvasRenderingContext2D,
+  style: MapStyle,
+  seed: number,
+  cell: { x: number; y: number },
+  cx: number,
+  cy: number,
+  tileW: number,
+) {
+  const rng = new Rng(seed * 31 + cell.x * 977 + cell.y * 131 + 7);
+  const pal = PALETTES[style];
+  if (style === 'ruins') return paintIsoBlock(ctx, rng, pal, cx, cy, tileW);
+  const c = tileW * 0.78;
+  paintBoulder(ctx, rng, style, pal, cx - c / 2, cy - c / 2 - 3 - c * 0.2, c);
+}
+
+/** Блок кладки в изометрии: светлая крышка-ромб и две боковые грани с кирпичами. */
+function paintIsoBlock(ctx: CanvasRenderingContext2D, rng: Rng, pal: Palette, cx: number, cy: number, tileW: number) {
+  const hw = tileW * 0.44;
+  const hh = hw / 2;
+  const h = tileW * (0.32 + rng.next() * 0.12);
+  const top = { x: cx, y: cy - hh - h };
+  const left = { x: cx - hw, y: cy - h };
+  const right = { x: cx + hw, y: cy - h };
+  const front = { x: cx, y: cy + hh - h };
+  const poly = (pts: { x: number; y: number }[]) => {
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.closePath();
+  };
+  const down = (p: { x: number; y: number }) => ({ x: p.x, y: p.y + h });
+
+  // Тень на полу.
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  poly([down(left), down(front), { x: cx + hw + 10, y: cy + 4 }, { x: cx + 10, y: cy + hh + 6 }]);
+  ctx.fill();
+
+  // Левая грань освещена, правая в тени.
+  const lg = ctx.createLinearGradient(0, left.y, 0, left.y + h);
+  lg.addColorStop(0, '#8d8170');
+  lg.addColorStop(1, '#5a5045');
+  ctx.fillStyle = lg;
+  poly([left, front, down(front), down(left)]);
+  ctx.fill();
+  const rg = ctx.createLinearGradient(0, right.y, 0, right.y + h);
+  rg.addColorStop(0, '#5f564a');
+  rg.addColorStop(1, '#38322b');
+  ctx.fillStyle = rg;
+  poly([front, right, down(right), down(front)]);
+  ctx.fill();
+
+  // Кирпичи: горизонтальные швы параллельны рёбрам, вертикальные — со сдвигом через ряд.
+  ctx.strokeStyle = 'rgba(25, 20, 15, 0.6)';
+  ctx.lineWidth = 1;
+  const rows = 3;
+  const faces: [{ x: number; y: number }, { x: number; y: number }][] = [
+    [left, front],
+    [front, right],
+  ];
+  for (const [a, b] of faces) {
+    for (let r = 1; r < rows; r++) {
+      const t = (r / rows) * h;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y + t);
+      ctx.lineTo(b.x, b.y + t);
+      ctx.stroke();
+    }
+    for (let r = 0; r < rows; r++) {
+      const t0 = (r / rows) * h;
+      const t1 = ((r + 1) / rows) * h;
+      for (const k of r % 2 ? [0.25, 0.75] : [0.5]) {
+        const x = a.x + (b.x - a.x) * k;
+        const y = a.y + (b.y - a.y) * k;
+        ctx.beginPath();
+        ctx.moveTo(x, y + t0);
+        ctx.lineTo(x, y + t1);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Крышка.
+  const cg = ctx.createLinearGradient(left.x, top.y, right.x, front.y);
+  cg.addColorStop(0, pal.rockLight);
+  cg.addColorStop(1, '#7c7162');
+  ctx.fillStyle = cg;
+  poly([top, right, front, left]);
+  ctx.fill();
+  if (rng.chance(0.5)) {
+    // Скол на крышке.
+    const k = 0.25 + rng.next() * 0.3;
+    ctx.fillStyle = '#5a5045';
+    poly([
+      { x: top.x + (right.x - top.x) * k, y: top.y + (right.y - top.y) * k },
+      right,
+      { x: right.x + (front.x - right.x) * k, y: right.y + (front.y - right.y) * k },
+    ]);
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  poly([top, right, down(right), down(front), down(left), left]);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath();
+  ctx.moveTo(left.x, left.y);
+  ctx.lineTo(front.x, front.y);
+  ctx.lineTo(right.x, right.y);
+  ctx.stroke();
+  if (rng.chance(0.35)) {
+    // Плющ по левой грани.
+    ctx.fillStyle = 'rgba(80, 120, 60, 0.85)';
+    const k = 0.2 + rng.next() * 0.6;
+    const x = left.x + (front.x - left.x) * k;
+    const y = left.y + (front.y - left.y) * k;
+    for (let i = 0; i < 6; i++) {
+      ctx.beginPath();
+      ctx.arc(x + (rng.next() * 2 - 1) * 3, y + i * (h / 6), 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 function paintFloorCell(ctx: CanvasRenderingContext2D, rng: Rng, style: MapStyle, pal: Palette, px: number, py: number, c: number) {
