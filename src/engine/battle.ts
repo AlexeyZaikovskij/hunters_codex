@@ -38,6 +38,8 @@ export const RULES = {
   sideBonus: 1.1,
   blockExtraMp: 1,
   collisionDamagePerCell: 8,
+  /** Толчок оружием (молот) бьёт о стену слабее магии: иначе это почти +50% к удару. */
+  weaponCollisionDamagePerCell: 4,
   maxWeaponAttacksPerTurn: 2,
   focusAp: 2,
   focusMana: 8,
@@ -482,7 +484,7 @@ export class Battle {
     );
     // Усиление оружия расходуется на первый удар.
     unit.statuses = unit.statuses.filter((s) => s.id !== 'weaponBoost');
-    if (w.push && target.alive) this.push(unit, target, dirTowards(unit.pos, target.pos), w.push, events);
+    if (w.push && target.alive) this.push(unit, target, dirTowards(unit.pos, target.pos), w.push, events, true);
     this.updateResult(events);
     return { ok: true, events };
   }
@@ -618,7 +620,7 @@ export class Battle {
     events.push({ type: 'heal', unitId: unit.id, amount: healed, hp: unit.hp });
   }
 
-  private push(source: Unit, target: Unit, dir: Dir, distanceCells: number, events: BattleEvent[]) {
+  private push(source: Unit, target: Unit, dir: Dir, distanceCells: number, events: BattleEvent[], byWeapon = false) {
     let moved = 0;
     while (moved < distanceCells) {
       const next = add(target.pos, DIRS[dir]);
@@ -632,12 +634,16 @@ export class Battle {
     const remaining = distanceCells - moved;
     if (remaining <= 0 || !target.alive) return;
 
-    // Столкновение: урон за каждую непройденную клетку.
-    const damage = Math.round(RULES.collisionDamagePerCell * remaining * (1 + source.stats.intellect / 100));
-    this.dealDamage(target, { attacker: null, from: null, base: damage, damageType: 'space', pure: true, label: 'Столкновение' }, events);
+    // Столкновение: урон за каждую непройденную клетку. Магия — чистый урон Пространством от Интеллекта,
+    // оружие — физический от Силы (режется сопротивлением).
+    const perCell = byWeapon ? RULES.weaponCollisionDamagePerCell : RULES.collisionDamagePerCell;
+    const stat = byWeapon ? source.stats.strength : source.stats.intellect;
+    const damage = Math.round(perCell * remaining * (1 + stat / 100));
+    const damageType = byWeapon ? 'physical' : 'space';
+    this.dealDamage(target, { attacker: null, from: null, base: damage, damageType, pure: !byWeapon, label: 'Столкновение' }, events);
     const other = this.unitAt(add(target.pos, DIRS[dir]));
     if (other)
-      this.dealDamage(other, { attacker: null, from: null, base: Math.round(damage / 2), damageType: 'space', pure: true, label: 'Столкновение' }, events);
+      this.dealDamage(other, { attacker: null, from: null, base: Math.round(damage / 2), damageType, pure: !byWeapon, label: 'Столкновение' }, events);
   }
 
   private dealDamage(target: Unit, o: DamageOptions, events: BattleEvent[]) {

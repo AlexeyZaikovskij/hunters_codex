@@ -66,6 +66,19 @@ describe('Battle', () => {
     expect(hero.hp).toBe(hero.maxHp);
   });
 
+  it('hammer collision deals less damage than spell collision', () => {
+    const hero = createHero('fire', WEAPONS_BY_ID.hammer, { x: 1, y: 2 });
+    const mob = createMonster('gnawer', 'm1', { x: 2, y: 2 });
+    mob.initiative = 0;
+    const battle = setup([hero, mob], [{ x: 3, y: 2 }]);
+    const res = battle.weaponAttack('hero', mob.pos);
+    expect(res.ok).toBe(true);
+    const hit = res.events.filter((e) => e.type === 'damage' && e.unitId === 'm1');
+    expect(hit).toHaveLength(2);
+    // 4 × (1 + 10% Силы) = 4.4 → с 10% физического сопротивления Червеглота ≈ 4.
+    expect(hit[1].type === 'damage' && hit[1].amount).toBe(4);
+  });
+
   it('obstacles block line of sight', () => {
     const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 0, y: 0 });
     const mob = createMonster('gnawer', 'm1', { x: 4, y: 0 });
