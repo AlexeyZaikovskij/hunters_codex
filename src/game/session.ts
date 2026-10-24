@@ -3,7 +3,7 @@ import { aiTurn } from '../engine/ai';
 import { Grid } from '../engine/grid';
 import type { BattleEvent, Location, Pos, Unit, WeaponDef } from '../engine/types';
 import { SKILLS } from '../data/skills';
-import { createHero, createMonster } from '../data/units';
+import { createHero, spawnMonsters } from '../data/units';
 import type { MapDef } from '../data/maps';
 
 // Связующее звено между движком, полем боя (Phaser) и интерфейсом (React).
@@ -19,6 +19,8 @@ export interface SessionSetup {
   location: Location;
   /** Выбранные умения Усиления тела (3 слота). */
   bodySkills: string[];
+  /** В походе герой входит в зал с тем здоровьем и маной, что остались с прошлого боя. */
+  heroState?: { hp: number; mana: number };
 }
 
 type Player = (events: BattleEvent[]) => Promise<void>;
@@ -38,11 +40,15 @@ export class BattleSession {
 
   constructor(readonly setup: SessionSetup) {
     const { map } = setup;
-    const units: Unit[] = [
-      createHero(setup.affinity, setup.weapon, map.heroStart, setup.bodySkills),
-      ...map.monsters.map((m, i) => createMonster(m.type, `m${i + 1}`, m.pos)),
-    ];
+    const hero = createHero(setup.affinity, setup.weapon, map.heroStart, setup.bodySkills);
+    if (setup.heroState) {
+      hero.hp = Math.max(1, Math.min(hero.maxHp, setup.heroState.hp));
+      hero.mana = Math.max(0, Math.min(hero.maxMana, setup.heroState.mana));
+    }
+    const monsters = spawnMonsters(map);
+    const units: Unit[] = [hero, ...monsters.units];
     this.battle = new Battle({
+      objective: monsters.objective,
       grid: new Grid(map.width, map.height, map.obstacles),
       units,
       skills: SKILLS,

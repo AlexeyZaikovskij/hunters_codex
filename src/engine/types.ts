@@ -123,7 +123,8 @@ export interface WeaponDef {
 
 export type MonsterTag = 'wormhole' | 'undead';
 
-export type AiArchetype = 'melee' | 'ranged';
+/** object — неподвижный предмет без действий (кристалл-источник). */
+export type AiArchetype = 'melee' | 'ranged' | 'object';
 
 export interface Unit {
   id: string;
@@ -162,6 +163,13 @@ export interface Unit {
   vigilant?: boolean;
   /** Удар Бдительности уже потрачен до начала своего следующего хода. */
   vigilanceUsed: boolean;
+  /** Не сдвигается: отталкивание и обмен местами на него не действуют. */
+  immovable?: boolean;
+  /** В начале своего хода лечит всех союзников на столько здоровья (источник «питает» стражу). */
+  pulseHeal?: number;
+  /** Впадает в ярость, когда здоровье падает до этой доли: +урон до конца боя. */
+  enrageAt?: number;
+  enraged?: boolean;
   alive: boolean;
 }
 

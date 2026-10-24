@@ -428,6 +428,35 @@ const monster: SkillDef[] = [
     target: 'enemy',
     effects: [{ type: 'damage', damageType: 'physical', min: 11, max: 14 }],
   },
+  {
+    id: 'm_maw',
+    icon: 'sharp-lips',
+    name: 'Пасть',
+    school: 'monster',
+    description: 'Червематка не жуёт. Ей некогда.',
+    apCost: 4,
+    manaCost: 0,
+    range: [1, 1],
+    needsLos: true,
+    target: 'enemy',
+    effects: [{ type: 'damage', damageType: 'physical', min: 12, max: 16 }],
+  },
+  {
+    id: 'm_acid',
+    icon: 'acid',
+    name: 'Кислотный плевок',
+    school: 'monster',
+    description: 'Разъедает броню, сапоги и уверенность в завтрашнем дне. Замедляет.',
+    apCost: 3,
+    manaCost: 0,
+    range: [1, 4],
+    needsLos: true,
+    target: 'enemy',
+    effects: [
+      { type: 'damage', damageType: 'physical', min: 6, max: 8 },
+      { type: 'status', status: 'slow', duration: 1, value: 1 },
+    ],
+  },
 ];
 
 export const SKILLS: Record<string, SkillDef> = Object.fromEntries(

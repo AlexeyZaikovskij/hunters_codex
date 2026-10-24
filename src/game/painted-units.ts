@@ -110,11 +110,35 @@ const boneGuard = svg(
    <path d="M70 66 L76 72 M92 88 L96 92" stroke="#1a1c22" stroke-width="2"/>`,
 );
 
+/** Кристалл-источник: друза фиолетовых кристаллов на каменном основании, светится изнутри. */
+const sourceCrystal = svg(
+  `<linearGradient id="cr" x1="0" y1="0" x2="1" y2="1">
+     <stop offset="0" stop-color="#f1d9ff"/><stop offset="0.45" stop-color="#b06cff"/><stop offset="1" stop-color="#4a1d8a"/></linearGradient>
+   <linearGradient id="crd" x1="1" y1="0" x2="0" y2="1">
+     <stop offset="0" stop-color="#c99bff"/><stop offset="1" stop-color="#2e0f5c"/></linearGradient>
+   <radialGradient id="aura" cx="0.5" cy="0.5" r="0.5">
+     <stop offset="0" stop-color="#d7a8ff" stop-opacity="0.7"/><stop offset="1" stop-color="#7a3cff" stop-opacity="0"/></radialGradient>
+   <linearGradient id="rock" x1="0" y1="0" x2="0" y2="1">
+     <stop offset="0" stop-color="#6b6676"/><stop offset="1" stop-color="#2a2733"/></linearGradient>`,
+  `<circle cx="64" cy="62" r="54" fill="url(#aura)"/>
+   <path d="M26 112 C24 100 34 92 46 92 L84 90 C98 92 106 100 102 112 Z" fill="url(#rock)" stroke="#16141c" stroke-width="2.5"/>
+   <path d="M40 100 L30 64 L42 58 L50 96 Z" fill="url(#crd)" stroke="#1d0a3a" stroke-width="2"/>
+   <path d="M88 98 L100 62 L110 70 L96 100 Z" fill="url(#crd)" stroke="#1d0a3a" stroke-width="2"/>
+   <path d="M50 100 L52 30 L64 10 L76 30 L78 100 Z" fill="url(#cr)" stroke="#1d0a3a" stroke-width="2.5"/>
+   <path d="M64 10 L64 100" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+   <path d="M52 30 L64 40 L76 30" fill="none" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1.5"/>
+   <path d="M72 100 L80 52 L90 46 L92 98 Z" fill="url(#cr)" stroke="#1d0a3a" stroke-width="2"/>
+   <path d="M36 100 L44 70 L56 76 L54 100 Z" fill="url(#cr)" stroke="#1d0a3a" stroke-width="2"/>
+   <circle cx="60" cy="34" r="3" fill="#ffffff"/><circle cx="84" cy="58" r="2" fill="#ffffff"/>`,
+);
+
 export const UNIT_ART: Record<string, string> = {
   hero,
   gnawer,
   spitter,
   bone_guard: boneGuard,
+  brood_mother: gnawer,
+  source_crystal: sourceCrystal,
 };
 
 export const svgDataUrl = (s: string) => `data:image/svg+xml;base64,${btoa(s)}`;

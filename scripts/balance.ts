@@ -2,6 +2,7 @@
 // Запуск: npm run balance              (200 боёв на сочетание, учебная карта)
 //         npm run balance -- 500       (своё число боёв)
 //         npm run balance -- 200 E     (случайные Червоточины класса E; или D)
+//         npm run balance -- 200 E run (походы: 4 боя подряд с переносом здоровья и маны)
 //
 // Бот не гений, но играет разумно: каждое действие выбирает по ожидаемому урону,
 // подходит на позицию для атаки, лечится и ставит щиты, когда здоровья мало.
@@ -11,9 +12,10 @@ import { Grid, distance } from '../src/engine/grid';
 import { runAiTurn } from '../src/engine/ai';
 import { SKILLS } from '../src/data/skills';
 import { WEAPONS_BY_ID } from '../src/data/weapons';
-import { createHero, createMonster } from '../src/data/units';
+import { createHero, spawnMonsters } from '../src/data/units';
 import { TRAINING_WORMHOLE, type MapDef } from '../src/data/maps';
 import { generateWormhole, type DangerClass } from '../src/data/mapgen';
+import { afterVictory, doors, isComplete, rest, startExpedition } from '../src/data/expedition';
 import type { Pos, SkillDef, Unit } from '../src/engine/types';
 
 type Affinity = 'fire' | 'light' | 'blood' | 'space';
@@ -162,12 +164,18 @@ function heroTurn(b: Battle, hero: Unit, stats: Stats) {
   if (b.result === 'ongoing' && hero.ap >= 2 && hero.mana < hero.maxMana - 5) b.focus('hero');
 }
 
-function simulate(affinity: Affinity, weaponId: string, seed: number, map: MapDef) {
-  const units = [
-    createHero(affinity, WEAPONS_BY_ID[weaponId], map.heroStart),
-    ...map.monsters.map((m, i) => createMonster(m.type, `m${i + 1}`, m.pos)),
-  ];
-  const b = new Battle({ grid: new Grid(map.width, map.height, map.obstacles), units, skills: SKILLS, location: 'wormhole', seed });
+function simulate(affinity: Affinity, weaponId: string, seed: number, map: MapDef, heroState?: { hp: number; mana: number }) {
+  const heroUnit = createHero(affinity, WEAPONS_BY_ID[weaponId], map.heroStart);
+  if (heroState) Object.assign(heroUnit, heroState);
+  const monsters = spawnMonsters(map);
+  const b = new Battle({
+    grid: new Grid(map.width, map.height, map.obstacles),
+    units: [heroUnit, ...monsters.units],
+    skills: SKILLS,
+    location: 'wormhole',
+    seed,
+    objective: monsters.objective,
+  });
   b.start();
   const hero = b.unit('hero');
   const stats: Stats = { spellDamage: 0, weaponDamage: 0 };
@@ -176,17 +184,58 @@ function simulate(affinity: Affinity, weaponId: string, seed: number, map: MapDe
     else heroTurn(b, hero, stats);
     if (b.result === 'ongoing') b.endTurn();
   }
-  return { win: b.result === 'victory', rounds: b.round, hpLeft: hero.hp, ...stats };
+  return { win: b.result === 'victory', rounds: b.round, hpLeft: hero.hp, manaLeft: hero.mana, ...stats };
+}
+
+/** Поход ботом: на развилке логово, если здоровья больше половины; на привале — что нужнее. */
+function simulateRun(affinity: Affinity, weaponId: string, seed: number, dangerClass: DangerClass) {
+  let exp = startExpedition(seed, dangerClass, createHero(affinity, WEAPONS_BY_ID[weaponId], { x: 0, y: 0 }));
+  while (!isComplete(exp)) {
+    if (!exp.rested) exp = rest(exp, exp.hp < exp.maxHp * 0.7 || exp.mana > exp.maxMana * 0.6 ? 'hp' : 'mana');
+    const options = doors(exp);
+    const door = options.length > 1 && exp.hp > exp.maxHp * 0.7 ? options[1] : options[0];
+    const r = simulate(affinity, weaponId, seed * 13 + exp.depth, door.map, { hp: exp.hp, mana: exp.mana });
+    if (!r.win) return { closed: false, depth: exp.depth, finale: exp.finale };
+    exp = afterVictory(exp, door, { hp: r.hpLeft, mana: r.manaLeft });
+  }
+  return { closed: true, depth: exp.depth, finale: exp.finale };
 }
 
 const games = Number(process.argv[2]) || 200;
 const mapArg = process.argv[3]?.toUpperCase();
+const runMode = process.argv[4] === 'run';
 const dangerClass = mapArg === 'E' || mapArg === 'D' ? (mapArg as DangerClass) : null;
 // На случайных картах бой номер i во всех сочетаниях идёт в одной и той же Червоточине — сравнение честное.
 const maps = Array.from({ length: games }, (_, i) =>
   dangerClass ? generateWormhole({ seed: 5000 + i, dangerClass }) : TRAINING_WORMHOLE,
 );
 const mapLabel = dangerClass ? `случайные Червоточины класса ${dangerClass}` : TRAINING_WORMHOLE.name;
+if (runMode) {
+  const cls = dangerClass ?? 'E';
+  console.log(`\nСимуляция походов класса ${cls}: ${games} походов на сочетание (бот: логово при здоровье > 70%)\n`);
+  console.log('Школа          Оружие     Закрыто  Босс  Источник  Залов в среднем');
+  for (const school of ['fire', 'light', 'blood', 'space'] as Affinity[]) {
+    for (const weapon of ['sword', 'hammer', 'dagger', 'bow']) {
+      let closed = 0, depthSum = 0;
+      const byFinale = { boss: [0, 0], source: [0, 0] };
+      for (let i = 0; i < games; i++) {
+        const r = simulateRun(school, weapon, 7000 + i, cls);
+        closed += +r.closed;
+        depthSum += r.depth;
+        if (r.depth >= 3) {
+          byFinale[r.finale][1]++;
+          byFinale[r.finale][0] += +r.closed;
+        }
+      }
+      const rate = ([w, n]: number[]) => (n ? `${Math.round((w / n) * 100)}%` : '—').padStart(5);
+      console.log(
+        `${school.padEnd(14)} ${weapon.padEnd(10)} ${`${Math.round((closed / games) * 100)}%`.padStart(7)}  ${rate(byFinale.boss)}  ${rate(byFinale.source).padStart(8)}  ${(depthSum / games).toFixed(2).padStart(15)}`,
+      );
+    }
+  }
+  process.exit(0);
+}
+
 const schools: Affinity[] = ['fire', 'light', 'blood', 'space'];
 const weapons = ['sword', 'hammer', 'dagger', 'bow'];
 const pct = (x: number) => `${Math.round(x * 100)}%`.padStart(5);

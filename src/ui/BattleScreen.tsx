@@ -6,6 +6,8 @@ import { UI_ICONS } from '../data/ui-icons';
 import { SKILLS, SCHOOL_NAMES } from '../data/skills';
 import { RULES, type ActionPreview, type Battle } from '../engine/battle';
 import type { DamageType, Status, StatusId, Unit } from '../engine/types';
+import { STYLE_NAMES, type RoomKind } from '../data/mapgen';
+import { ROOM_NAMES, ROOMS_BEFORE_FINALE } from '../data/expedition';
 
 // Физический урон без подписи: «12–15 урона».
 const DAMAGE_NAMES: Record<DamageType, string> = {
@@ -98,7 +100,7 @@ function useSession(session: BattleSession) {
   useSyncExternalStore(session.subscribe, session.getVersion);
 }
 
-function Bar({ value, max, kind }: { value: number; max: number; kind: 'hp' | 'mana' }) {
+export function Bar({ value, max, kind }: { value: number; max: number; kind: 'hp' | 'mana' }) {
   return (
     <div className={`bar bar-${kind}`}>
       <div className="bar-fill" style={{ width: `${(100 * value) / Math.max(1, max)}%` }} />
@@ -133,6 +135,16 @@ function UnitCard({ unit, title, preview }: { unit: Unit; title?: string; previe
         </span>
         {unit.name}
         {unit.tags.includes('undead') && <span className="tag">нежить</span>}
+        {unit.immovable && (
+          <span className="tag" title={`Не двигается и не действует. В начале своего хода лечит стражу на ${unit.pulseHeal ?? 0}. Разрушьте его — и бой выигран.`}>
+            источник
+          </span>
+        )}
+        {unit.enrageAt && (
+          <span className="tag kill" title={`При ${Math.round(unit.enrageAt * 100)}% здоровья впадает в ярость: +${RULES.enrageBonus}% урона.`}>
+            {unit.enraged ? 'в ярости' : 'ярость'}
+          </span>
+        )}
         {unit.vigilant && (
           <span className="tag" title="Бьёт того, кто отступает с соседней клетки (раз за раунд)">
             бдительный
@@ -174,8 +186,11 @@ export function BattleScreen({
   onRetry,
   onNewMap,
   onExit,
+  expedition,
 }: {
   session: BattleSession;
+  /** Бой — зал похода: свои кнопки в конце боя, выход из боя — бегство. */
+  expedition?: { room: RoomKind; depth: number; onWin: () => void; onLose: () => void };
   onRetry: () => void;
   /** Только для случайных Червоточин: новое поле того же класса. */
   onNewMap?: () => void;
@@ -218,9 +233,16 @@ export function BattleScreen({
   }, [session, hero]);
 
   const leave = () => {
+    if (expedition) {
+      if (battle.result === 'ongoing' && !window.confirm('Сбежать из Червоточины? Половина собранных осколков будет потеряна.')) return;
+      if (battle.result === 'victory') expedition.onWin();
+      else expedition.onLose();
+      return;
+    }
     if (battle.result === 'ongoing' && !window.confirm('Покинуть бой? Прогресс этого боя будет потерян.')) return;
     onExit();
   };
+  const finale = expedition?.room === 'boss' || expedition?.room === 'source';
 
   const hovered = hover ? battle.unitAt(hover) : undefined;
   const isActive = (m: Mode) => JSON.stringify(m) === JSON.stringify(mode);
@@ -237,8 +259,14 @@ export function BattleScreen({
         <div>
           <h1>Atrium</h1>
           <span className="sub">
-            {session.setup.map.name} · {session.setup.location === 'wormhole' ? 'внутри Червоточины' : 'прорыв на поверхности'}
-            {session.setup.map.seed !== undefined && ` · зерно ${session.setup.map.seed}`}
+            {expedition ? (
+              `Зал ${expedition.depth + 1} из ${ROOMS_BEFORE_FINALE + 1}: ${ROOM_NAMES[expedition.room]} · Червоточина класса ${session.setup.map.dangerClass}, ${STYLE_NAMES[session.setup.map.style ?? 'ruins']}`
+            ) : (
+              <>
+                {session.setup.map.name} · {session.setup.location === 'wormhole' ? 'внутри Червоточины' : 'прорыв на поверхности'}
+                {session.setup.map.seed !== undefined && ` · зерно ${session.setup.map.seed}`}
+              </>
+            )}
           </span>
         </div>
         <div className="turn-info">
@@ -248,7 +276,7 @@ export function BattleScreen({
           </span>
         </div>
         <button className="ghost" onClick={leave}>
-          Сменить склонность
+          {expedition ? 'Сбежать' : 'Сменить склонность'}
         </button>
       </header>
 
@@ -279,7 +307,32 @@ export function BattleScreen({
       <main className="center">
         <PhaserView session={session} />
         {session.message && <div className="toast">{session.message}</div>}
-        {battle.result !== 'ongoing' && !session.busy && (
+        {expedition && battle.result !== 'ongoing' && !session.busy && (
+          <div className="result">
+            <h2>{battle.result === 'victory' ? (finale ? 'Червоточина закрыта!' : 'Зал зачищен') : 'Поражение'}</h2>
+            <p>
+              {battle.result === 'victory'
+                ? finale
+                  ? expedition.room === 'source'
+                    ? 'Источник рассыпался, Червоточина схлопывается. Пора на выход — желательно бегом.'
+                    : 'Червематка повержена, Червоточина затихает. Служба контроля уже выехала с бланками.'
+                  : 'Можно перевести дух. Дальше — развилка.'
+                : 'Вас вынесли из Червоточины. Часть добычи осталась внутри — монстрам тоже нужно на что-то жить.'}
+            </p>
+            <div className="result-actions">
+              {battle.result === 'victory' ? (
+                <button className="primary" onClick={expedition.onWin}>
+                  {finale ? 'Итоги похода' : 'Дальше'}
+                </button>
+              ) : (
+                <button className="primary" onClick={expedition.onLose}>
+                  Итоги похода
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {!expedition && battle.result !== 'ongoing' && !session.busy && (
           <div className="result">
             <h2>{battle.result === 'victory' ? 'Победа!' : 'Поражение'}</h2>
             <p>

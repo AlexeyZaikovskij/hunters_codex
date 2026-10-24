@@ -66,6 +66,18 @@ export const UNIT_MODELS: Record<string, ModelDef> = {
       death: 'SpiderArmature|Spider_Death',
     },
   },
+  // Червематка — тот же паук, только вдвое крупнее и гораздо злее.
+  brood_mother: {
+    file: 'spider.glb',
+    source: 'spider.glb',
+    height: 0.8,
+    anims: {
+      idle: 'SpiderArmature|Spider_Idle',
+      walk: 'SpiderArmature|Spider_Walk',
+      attack: 'SpiderArmature|Spider_Attack',
+      death: 'SpiderArmature|Spider_Death',
+    },
+  },
   spitter: {
     file: 'spiky_blob.glb',
     source: 'spiky_blob.glb',

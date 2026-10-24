@@ -882,3 +882,143 @@ button {
 .credits a {
   color: inherit;
 }
+
+/* ───────── Поход ───────── */
+
+.expedition {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.expedition .setup-head h1 {
+  font-size: 32px;
+}
+
+.expedition h2 {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.hint.first {
+  margin: 0 0 12px;
+}
+
+.track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.track li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.track li.done {
+  color: var(--hp);
+}
+
+.track li.current {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.track-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--panel-2);
+}
+
+.track li.current .track-dot {
+  background: var(--accent);
+  color: #1a1400;
+}
+
+.expedition-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+}
+
+.loot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--space);
+}
+
+.loot div {
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+}
+
+.loot b {
+  font-size: 22px;
+}
+
+.doors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.door-lair strong,
+.door-boss strong,
+.door-source strong {
+  color: var(--fire);
+}
+
+.door-monsters {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.door-monsters li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.weapon .door-monsters li span {
+  color: var(--text);
+}
+
+.summary p {
+  margin: 0 0 16px;
+  color: #c7cbd9;
+  line-height: 1.5;
+}
+
+.start-row {
+  justify-content: flex-start;
+}
+
+@media (max-width: 600px) {
+  .expedition-status {
+    grid-template-columns: 1fr;
+  }
+}

@@ -7,7 +7,9 @@ import { TRAINING_WORMHOLE } from '../data/maps';
 import { Icon } from './Icon';
 import { generateWormhole, randomSeed, type DangerClass } from '../data/mapgen';
 import { BODY_SLOTS, DEFAULT_BODY_SKILLS } from '../data/units';
-import type { Location } from '../engine/types';
+import type { Location, WeaponDef } from '../engine/types';
+import { getShards } from '../game/stash';
+import { FINALE_NAMES, ROOMS_BEFORE_FINALE } from '../data/expedition';
 import { ART_NAMES, getArtStyle, setArtStyle, type ArtStyle } from '../game/art';
 
 const AFFINITIES: { id: Affinity; name: string; tagline: string }[] = [
@@ -17,15 +19,41 @@ const AFFINITIES: { id: Affinity; name: string; tagline: string }[] = [
   { id: 'space', name: 'Пространство', tagline: 'Телепорты, отбрасывания и падения с высоты.' },
 ];
 
-type MapKind = 'random' | 'training';
+type MapKind = 'expedition' | 'random' | 'training';
 
-export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) => void; initial?: SessionSetup }) {
-  const [affinity, setAffinity] = useState<Affinity>(initial?.affinity ?? 'fire');
-  const [weaponId, setWeaponId] = useState(initial?.weapon.id ?? 'sword');
-  const [location, setLocation] = useState<Location>(initial?.location ?? 'wormhole');
-  const [bodySkills, setBodySkills] = useState<string[]>(initial?.bodySkills ?? DEFAULT_BODY_SKILLS);
-  const [mapKind, setMapKind] = useState<MapKind>(initial && initial.map.seed === undefined ? 'training' : 'random');
-  const [dangerClass, setDangerClass] = useState<DangerClass>(initial?.map.dangerClass ?? 'E');
+/** С чем идём в поход: персонаж и Червоточина. */
+export interface ExpeditionStart {
+  affinity: Affinity;
+  weapon: WeaponDef;
+  bodySkills: string[];
+  dangerClass: DangerClass;
+  seed: number;
+}
+
+/** Последний выбор игрока — одиночный бой или поход. */
+export type SetupChoice = { kind: 'battle'; setup: SessionSetup } | { kind: 'expedition'; start: ExpeditionStart };
+
+export function SetupScreen({
+  onStart,
+  onExpedition,
+  initial,
+}: {
+  onStart: (s: SessionSetup) => void;
+  onExpedition: (s: ExpeditionStart) => void;
+  initial?: SetupChoice;
+}) {
+  const prev = initial?.kind === 'battle' ? initial.setup : initial?.start;
+  const [affinity, setAffinity] = useState<Affinity>(prev?.affinity ?? 'fire');
+  const [weaponId, setWeaponId] = useState(prev?.weapon.id ?? 'sword');
+  const [location, setLocation] = useState<Location>(initial?.kind === 'battle' ? initial.setup.location : 'wormhole');
+  const [bodySkills, setBodySkills] = useState<string[]>(prev?.bodySkills ?? DEFAULT_BODY_SKILLS);
+  const [mapKind, setMapKind] = useState<MapKind>(
+    initial?.kind !== 'battle' ? 'expedition' : initial.setup.map.seed === undefined ? 'training' : 'random',
+  );
+  const [dangerClass, setDangerClass] = useState<DangerClass>(
+    (initial?.kind === 'battle' ? initial.setup.map.dangerClass : initial?.start.dangerClass) ?? 'E',
+  );
+  const shards = getShards();
   // Пустое поле — новая случайная Червоточина; число — повторить конкретную.
   const [seedText, setSeedText] = useState('');
   const [art, setArt] = useState<ArtStyle>(getArtStyle());
@@ -38,7 +66,8 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
       cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < BODY_SLOTS ? [...cur, id] : cur,
     );
   const weapon = WEAPONS.find((w) => w.id === weaponId)!;
-  const weaponBlocked = !!weapon.technology && location === 'wormhole';
+  const expedition = mapKind === 'expedition';
+  const weaponBlocked = !!weapon.technology && (location === 'wormhole' || expedition);
   const [server, setServer] = useState<ServerStatus | 'checking'>('checking');
 
   useEffect(() => {
@@ -49,7 +78,7 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
     <div className="setup">
       <header className="setup-head">
         <h1>Atrium</h1>
-        <p>Прототип боя</p>
+        <p>Прототип боя{shards > 0 && ` · на складе ${shards} осколков Червоточин`}</p>
         <p className={`server server-${server}`}>
           Сервер:{' '}
           {
@@ -141,6 +170,7 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
         </div>
       </section>
 
+      {!expedition && (
       <section>
         <h2>Место боя</h2>
         <div className="toggle">
@@ -153,19 +183,23 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
         </div>
         {weaponBlocked && <p className="warn">Пистолет — обычная техника: в Червоточине он не выстрелит.</p>}
       </section>
+      )}
 
       <section>
         <h2>Червоточина</h2>
         <div className="map-options">
           <div className="toggle">
+            <button className={mapKind === 'expedition' ? 'selected' : ''} onClick={() => setMapKind('expedition')}>
+              Поход
+            </button>
             <button className={mapKind === 'random' ? 'selected' : ''} onClick={() => setMapKind('random')}>
-              Случайная
+              Один бой
             </button>
             <button className={mapKind === 'training' ? 'selected' : ''} onClick={() => setMapKind('training')}>
               Учебная
             </button>
           </div>
-          {mapKind === 'random' && (
+          {mapKind !== 'training' && (
             <>
               <div className="toggle">
                 <button className={dangerClass === 'E' ? 'selected' : ''} onClick={() => setDangerClass('E')}>
@@ -188,7 +222,9 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
           )}
         </div>
         <p className="hint">
-          {mapKind === 'training'
+          {expedition
+            ? `Поход: ${ROOMS_BEFORE_FINALE} зала с развилками и финал — ${FINALE_NAMES.boss.toLowerCase()} или ${FINALE_NAMES.source.toLowerCase()}. Здоровье и мана переносятся между боями, за каждый зал — осколки Червоточины. Класс ${dangerClass === 'E' ? 'E — по силам новичку' : 'D — пока почти непроходим без развития персонажа'}.${weaponBlocked ? ' Пистолет в Червоточине не стреляет.' : ''}`
+            : mapKind === 'training'
             ? `${TRAINING_WORMHOLE.name}: всегда одно и то же поле — удобно сравнивать школы.`
             : dangerClass === 'E'
               ? 'Класс E: 3 монстра. Поле и состав каждый раз новые: пещера, руины или пустошь.'
@@ -219,6 +255,10 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
         className="primary start"
         disabled={bodySkills.length < BODY_SLOTS}
         onClick={() => {
+          if (expedition) {
+            onExpedition({ affinity, weapon, bodySkills, dangerClass, seed: seedText ? Number(seedText) : randomSeed() });
+            return;
+          }
           const map =
             mapKind === 'training'
               ? TRAINING_WORMHOLE
@@ -226,7 +266,7 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
           onStart({ map, affinity, weapon, location, bodySkills });
         }}
       >
-        В бой
+        {expedition ? 'В поход' : 'В бой'}
       </button>
 
       <footer className="credits">

@@ -6,7 +6,7 @@ import { SKILLS } from '../data/skills';
 import { ICONS } from '../data/icons';
 import { key, samePos } from '../engine/grid';
 import { Rng } from '../engine/rng';
-import { SHEETS, TILESETS, UNIT_SPRITES, type SheetId, type SpriteRef } from '../data/sprites';
+import { SHEETS, TILESETS, UNIT_SIZE, UNIT_SPRITES, type SheetId, type SpriteRef } from '../data/sprites';
 import dungeonSheetUrl from '../assets/kenney/tiny-dungeon.png';
 import cavesSheetUrl from '../assets/kenney/roguelike-caves.png';
 import { getArtStyle, type ArtStyle } from './art';
@@ -289,10 +289,16 @@ export class BattleScene extends Phaser.Scene {
         { model, groundY: 6 },
       );
     }
+    const size = (u.kind && UNIT_SIZE[u.kind]) || 1;
     if (this.art !== 'pixel' && u.kind && UNIT_ART[u.kind])
-      return this.createSpriteView(u, (s) => s.image(0, -12, artKey(u.kind!)).setDisplaySize(80, 80), -46);
+      return this.createSpriteView(
+        u,
+        (s) => s.image(0, 28 - 40 * size, artKey(u.kind!)).setDisplaySize(80 * size, 80 * size),
+        -46 - 30 * (size - 1),
+      );
     const ref = u.kind ? UNIT_SPRITES[u.kind] : undefined;
-    if (ref) return this.createSpriteView(u, (s) => s.image(0, -4, sheetKey(ref.sheet), ref.frame).setScale(UNIT_SCALE));
+    if (ref)
+      return this.createSpriteView(u, (s) => s.image(0, 28 - 32 * size, sheetKey(ref.sheet), ref.frame).setScale(UNIT_SCALE * size));
     const { x, y } = this.proj.center(u.pos);
     const ring = this.add.circle(0, 0, 25).setStrokeStyle(3, COLORS.current).setVisible(false);
     const shadow = this.add.ellipse(0, 16, 40, 12, 0x000000, 0.4);

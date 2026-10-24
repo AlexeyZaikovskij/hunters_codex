@@ -46,6 +46,8 @@ export const RULES = {
   focusMana: 8,
   lightVsWormhole: 25,
   lightVsUndead: 1.5,
+  /** Ярость босса: +% урона до конца боя. */
+  enrageBonus: 30,
 };
 
 export type AttackSide = 'front' | 'side' | 'back';
@@ -81,7 +83,11 @@ export interface BattleOptions {
   skills: Record<string, SkillDef>;
   location: Location;
   seed: number;
+  /** Цель боя: по умолчанию — победить всех; 'destroy' — достаточно уничтожить один юнит (источник). */
+  objective?: Objective;
 }
+
+export type Objective = { kind: 'all' } | { kind: 'destroy'; unitId: string };
 
 interface DamageOptions {
   attacker: Unit | null;
@@ -113,6 +119,7 @@ export class Battle {
   turnIndex = 0;
   round = 1;
   result: BattleResult = 'ongoing';
+  readonly objective: Objective;
   private rng: Rng;
   private zoneCounter = 0;
 
@@ -121,6 +128,7 @@ export class Battle {
     this.units = opts.units;
     this.skills = opts.skills;
     this.location = opts.location;
+    this.objective = opts.objective ?? { kind: 'all' };
     this.rng = new Rng(opts.seed);
     // При равной инициативе первым ходит игрок.
     this.order = [...this.units]
@@ -256,6 +264,7 @@ export class Battle {
         break;
       case 'unit':
         if (!target || target === unit) return false;
+        if (target.immovable && skill.effects.some((e) => e.type === 'swap')) return false;
         break;
       case 'emptyCell':
         if (!this.isFree(cell)) return false;
@@ -600,6 +609,12 @@ export class Battle {
     unit.focusedThisTurn = false;
     unit.vigilanceUsed = false;
 
+    if (unit.pulseHeal) {
+      const fed = this.units.filter((u) => u.alive && u !== unit && u.team === unit.team && u.hp < u.maxHp);
+      if (fed.length) events.push({ type: 'log', text: `${unit.name} пульсирует и питает стражу.` });
+      for (const u of fed) this.heal(u, unit.pulseHeal, events);
+    }
+
     const burn = this.statusValue(unit, 'burn');
     if (burn > 0) this.dealDamage(unit, { attacker: null, from: null, base: burn, damageType: 'fire', label: 'Горение' }, events);
 
@@ -639,6 +654,7 @@ export class Battle {
   /** Сколько клеток толчка цель не пройдёт (столкновение). Цель не двигается. */
   /** Чем закончится отталкивание: сколько клеток не пройдено и в кого цель врежется. */
   private pushOutcome(target: Unit, dir: Dir, distanceCells: number): { blocked: number; victim: Unit | null } {
+    if (target.immovable) return { blocked: 0, victim: null };
     let p = target.pos;
     for (let moved = 0; moved < distanceCells; moved++) {
       const next = add(p, DIRS[dir]);
@@ -916,6 +932,7 @@ export class Battle {
   }
 
   private push(source: Unit, target: Unit, dir: Dir, distanceCells: number, events: BattleEvent[], byWeapon = false) {
+    if (target.immovable) return;
     let moved = 0;
     while (moved < distanceCells) {
       const next = add(target.pos, DIRS[dir]);
@@ -1002,6 +1019,12 @@ export class Battle {
 
     if (o.lifesteal && o.attacker && o.attacker.alive) this.heal(o.attacker, Math.round(amount * o.lifesteal), events);
 
+    if (target.alive && target.hp > 0 && target.enrageAt && !target.enraged && target.hp <= target.maxHp * target.enrageAt) {
+      target.enraged = true;
+      this.addStatus(target, 'damageBoost', 99, RULES.enrageBonus, target.id);
+      events.push({ type: 'log', text: `${target.name} впадает в ярость: +${RULES.enrageBonus}% урона!` });
+    }
+
     if (target.hp <= 0) {
       target.alive = false;
       events.push({ type: 'death', unitId: target.id }, { type: 'log', text: `${target.name} повержен.` });
@@ -1012,9 +1035,18 @@ export class Battle {
     if (this.result !== 'ongoing') return;
     const playerAlive = this.units.some((u) => u.team === 'player' && u.alive);
     const enemyAlive = this.units.some((u) => u.team === 'enemy' && u.alive);
+    const source = this.objective.kind === 'destroy' ? this.unit(this.objective.unitId) : null;
     if (!playerAlive) this.result = 'defeat';
-    else if (!enemyAlive) this.result = 'victory';
+    else if (!enemyAlive || (source && !source.alive)) this.result = 'victory';
     if (this.result !== 'ongoing')
-      events.push({ type: 'log', text: this.result === 'victory' ? 'Победа! Червоточина зачищена.' : 'Поражение…' });
+      events.push({
+        type: 'log',
+        text:
+          this.result === 'defeat'
+            ? 'Поражение…'
+            : source && !source.alive
+              ? 'Победа! Источник разрушен, Червоточина схлопывается.'
+              : 'Победа! Все враги повержены.',
+      });
   }
 }

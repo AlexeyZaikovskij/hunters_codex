@@ -4,7 +4,7 @@
 import { Rng } from '../engine/rng';
 import type { Pos } from '../engine/types';
 import type { MapDef, MapStyle } from './maps';
-import type { MONSTERS } from './units';
+import type { MONSTERS, REGULAR_MONSTERS } from './units';
 
 export type DangerClass = 'E' | 'D';
 export type { MapStyle };
@@ -16,12 +16,29 @@ export const STYLE_NAMES: Record<MapStyle, string> = {
 };
 
 type MonsterType = keyof typeof MONSTERS;
+type RegularType = (typeof REGULAR_MONSTERS)[number];
+
+/**
+ * Какой зал генерируем. single — одиночный бой (по умолчанию).
+ * В походе: entrance и corridor — на монстра меньше одиночного боя, lair — логово (полный состав, больше добычи),
+ * boss — Червематка со свитой, source — кристалл-источник под охраной.
+ */
+export type RoomKind = 'single' | 'entrance' | 'corridor' | 'lair' | 'boss' | 'source';
+
+const ROOM_SUFFIX: Record<RoomKind, string> = {
+  single: '',
+  entrance: '',
+  corridor: '',
+  lair: ' — логово',
+  boss: ' — гнездо Червематки',
+  source: ' — источник',
+};
 
 /**
  * Состав по классу опасности: сколько монстров и не больше стольких каждого вида
  * (пять стрелков разом — уже не бой, а расстрел).
  */
-const CLASS_RULES: Record<DangerClass, { count: [number, number]; max: Record<MonsterType, number> }> = {
+const CLASS_RULES: Record<DangerClass, { count: [number, number]; max: Record<RegularType, number> }> = {
   E: { count: [3, 3], max: { gnawer: 2, spitter: 1, bone_guard: 1 } },
   D: { count: [4, 5], max: { gnawer: 3, spitter: 2, bone_guard: 2 } },
 };
@@ -35,6 +52,8 @@ export interface GenOptions {
   dangerClass: DangerClass;
   /** Без стиля — случайный. */
   style?: MapStyle;
+  /** Без типа — одиночный бой. */
+  room?: RoomKind;
 }
 
 const k = (p: Pos) => `${p.x},${p.y}`;
@@ -82,11 +101,11 @@ function tryGenerate(rng: Rng, style: MapStyle, opts: GenOptions): MapDef | null
     }
   if (SIZE * SIZE - walls.size < MIN_FLOOR) return null;
 
-  const monsters = placeMonsters(rng, pickMonsters(rng, opts.dangerClass), dist);
+  const monsters = placeMonsters(rng, pickMonsters(rng, opts.dangerClass, opts.room ?? 'single'), dist);
   if (!monsters) return null;
 
   return {
-    name: `Червоточина класса ${opts.dangerClass}: ${STYLE_NAMES[style]}`,
+    name: `Червоточина класса ${opts.dangerClass}: ${STYLE_NAMES[style]}${ROOM_SUFFIX[opts.room ?? 'single']}`,
     style,
     width: SIZE,
     height: SIZE,
@@ -174,15 +193,21 @@ function bfs(start: Pos, walls: Set<string>): Map<string, number> {
   return dist;
 }
 
-function pickMonsters(rng: Rng, dangerClass: DangerClass): MonsterType[] {
-  const { count, max } = CLASS_RULES[dangerClass];
-  const total = rng.int(count[0], count[1]);
+/** Состав зала. Финальный монстр или источник идёт первым — его ставят первым и подальше. */
+function pickMonsters(rng: Rng, dangerClass: DangerClass, room: RoomKind): MonsterType[] {
+  const rules = CLASS_RULES[dangerClass];
+  const base = rng.int(rules.count[0], rules.count[1]);
+  // В походе залов несколько подряд, поэтому каждый зал меньше одиночного боя.
+  const total = { single: base, entrance: base - 1, corridor: base - 1, lair: base, boss: base - 2, source: base - 1 }[room];
+  const { max } = rules;
   const picked: MonsterType[] = [];
-  const types = Object.keys(max) as MonsterType[];
+  const types = Object.keys(max) as RegularType[];
   while (picked.length < total) {
     const allowed = types.filter((t) => picked.filter((x) => x === t).length < max[t]);
     picked.push(allowed[rng.int(0, allowed.length - 1)]);
   }
+  if (room === 'boss') return ['brood_mother', ...picked];
+  if (room === 'source') return ['source_crystal', ...picked];
   return picked;
 }
 
@@ -198,8 +223,14 @@ function placeMonsters(rng: Rng, types: MonsterType[], dist: Map<string, number>
   const out: MapDef['monsters'] = [];
   for (const type of types) {
     const options = free.filter((p) => out.every((m) => Math.abs(m.pos.x - p.x) + Math.abs(m.pos.y - p.y) > 1));
-    // Стрелки встают подальше, остальные — где придётся.
-    const pool = type === 'spitter' ? options.filter((p) => p.x >= SIZE - 2) : options;
+    // Стрелки встают подальше, источник — в самой дальней части зала, остальные — где придётся.
+    const farthest = Math.max(...options.map((p) => dist.get(k(p)) ?? 0));
+    const pool =
+      type === 'spitter'
+        ? options.filter((p) => p.x >= SIZE - 2)
+        : type === 'source_crystal'
+          ? options.filter((p) => (dist.get(k(p)) ?? 0) >= farthest - 2)
+          : options;
     const from = pool.length ? pool : options;
     if (!from.length) return null;
     out.push({ type, pos: from[rng.int(0, from.length - 1)] });

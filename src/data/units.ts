@@ -1,5 +1,7 @@
 import type { AiArchetype, MonsterTag, Pos, Stats, Unit, WeaponDef } from '../engine/types';
+import type { Objective } from '../engine/battle';
 import { SCHOOL_SKILLS } from './skills';
+import type { MapDef } from './maps';
 
 type Affinity = 'fire' | 'light' | 'blood' | 'space';
 
@@ -81,6 +83,10 @@ interface MonsterDef {
   resist?: Unit['resist'];
   /** Бьёт тех, кто отступает с соседней клетки. */
   vigilant?: boolean;
+  /** Неподвижный предмет (кристалл-источник): без ходов и действий, не сдвигается. */
+  object?: boolean;
+  pulseHeal?: number;
+  enrageAt?: number;
 }
 
 export const MONSTERS: Record<string, MonsterDef> = {
@@ -127,7 +133,43 @@ export const MONSTERS: Record<string, MonsterDef> = {
     resist: { physical: 20, blood: 30 },
     vigilant: true,
   },
+  // ── Финалы Червоточин ──
+  brood_mother: {
+    icon: 'spider-face',
+    name: 'Червематка',
+    glyph: 'М',
+    color: 0x9c2f4a,
+    hp: 100,
+    ap: 6,
+    mp: 3,
+    initiative: 11,
+    skills: ['m_maw', 'm_acid'],
+    tags: ['wormhole'],
+    ai: 'melee',
+    resist: { physical: 15 },
+    enrageAt: 0.5,
+  },
+  source_crystal: {
+    icon: 'crystal-growth',
+    name: 'Источник',
+    glyph: '◆',
+    color: 0xb06cff,
+    hp: 90,
+    ap: 0,
+    mp: 0,
+    initiative: 0,
+    skills: [],
+    tags: ['wormhole'],
+    ai: 'object',
+    // Кристалл хрупок к ударам, но магию Червоточины частично впитывает.
+    resist: { physical: -20, fire: 20, light: 20, blood: 50, space: 20 },
+    object: true,
+    pulseHeal: 5,
+  },
 };
+
+/** Обычные монстры, которые встречаются в залах (не финалы). */
+export const REGULAR_MONSTERS = ['gnawer', 'spitter', 'bone_guard'] as const;
 
 export function createMonster(type: keyof typeof MONSTERS, id: string, pos: Pos): Unit {
   const def = MONSTERS[type];
@@ -152,5 +194,15 @@ export function createMonster(type: keyof typeof MONSTERS, id: string, pos: Pos)
     ai: def.ai,
     resist: def.resist ?? {},
     vigilant: def.vigilant,
+    immovable: def.object,
+    pulseHeal: def.pulseHeal,
+    enrageAt: def.enrageAt,
   });
+}
+
+/** Монстры зала и цель боя: если в зале есть источник — достаточно разрушить его. */
+export function spawnMonsters(map: MapDef): { units: Unit[]; objective: Objective } {
+  const units = map.monsters.map((m, i) => createMonster(m.type, `m${i + 1}`, m.pos));
+  const source = units.find((u) => u.immovable);
+  return { units, objective: source ? { kind: 'destroy', unitId: source.id } : { kind: 'all' } };
 }

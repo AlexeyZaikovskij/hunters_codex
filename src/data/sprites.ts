@@ -33,6 +33,12 @@ export const UNIT_SPRITES: Record<string, SpriteRef> = {
   gnawer: d(122), // паук
   spitter: d(110), // шипастый краб
   bone_guard: d(96), // латник в шлеме
+  brood_mother: d(122), // тот же паук, рисуется крупнее
+};
+
+/** Во сколько раз крупнее обычного рисуется юнит (боссы). */
+export const UNIT_SIZE: Record<string, number> = {
+  brood_mother: 1.35,
 };
 
 export interface Tileset {
