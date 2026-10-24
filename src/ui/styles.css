@@ -214,6 +214,17 @@ button {
   color: var(--space);
 }
 
+.weapon:disabled {
+  opacity: 0.45;
+  transform: none;
+  cursor: default;
+}
+
+.primary.start:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .weapons {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

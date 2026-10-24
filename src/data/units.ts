@@ -26,13 +26,18 @@ function baseUnit(partial: Partial<Unit> & Pick<Unit, 'id' | 'name' | 'team' | '
     cooldowns: {},
     weaponAttacksThisTurn: 0,
     focusedThisTurn: false,
+    vigilanceUsed: false,
     alive: true,
     ...partial,
   };
 }
 
-/** Одарённый игрока: 5 умений школы склонности + 3 умения базовой школы = 8 слотов. */
-export function createHero(affinity: Affinity, weapon: WeaponDef, pos: Pos): Unit {
+/** Сколько умений базовой школы берётся в бой: 5 склонности + 3 базовой = 8 слотов. */
+export const BODY_SLOTS = 3;
+export const DEFAULT_BODY_SKILLS = ['energy_armor', 'dash', 'power_strike'];
+
+/** Одарённый игрока: 5 умений школы склонности + 3 выбранных умения базовой школы. */
+export function createHero(affinity: Affinity, weapon: WeaponDef, pos: Pos, bodySkills = DEFAULT_BODY_SKILLS): Unit {
   // Прототип: персонаж примерно 5-го уровня, 20 очков распределены поровну.
   const stats: Stats = { strength: 10, agility: 10, intellect: 10, will: 0, stamina: 0 };
   const maxHp = 100 + stats.stamina * 5;
@@ -51,7 +56,7 @@ export function createHero(affinity: Affinity, weapon: WeaponDef, pos: Pos): Uni
     manaRegen: 3,
     initiative: 10 + stats.agility,
     stats,
-    skills: [...SCHOOL_SKILLS[affinity], 'energy_armor', 'dash', 'power_strike'],
+    skills: [...SCHOOL_SKILLS[affinity], ...bodySkills.slice(0, BODY_SLOTS)],
     weapon,
   });
 }
@@ -69,6 +74,8 @@ interface MonsterDef {
   tags: MonsterTag[];
   ai: AiArchetype;
   resist?: Unit['resist'];
+  /** Бьёт тех, кто отступает с соседней клетки. */
+  vigilant?: boolean;
 }
 
 export const MONSTERS: Record<string, MonsterDef> = {
@@ -110,6 +117,7 @@ export const MONSTERS: Record<string, MonsterDef> = {
     tags: ['wormhole', 'undead'],
     ai: 'melee',
     resist: { physical: 20, blood: 30 },
+    vigilant: true,
   },
 };
 
@@ -133,5 +141,6 @@ export function createMonster(type: keyof typeof MONSTERS, id: string, pos: Pos)
     tags: def.tags,
     ai: def.ai,
     resist: def.resist ?? {},
+    vigilant: def.vigilant,
   });
 }

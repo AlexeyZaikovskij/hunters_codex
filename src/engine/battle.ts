@@ -25,6 +25,7 @@ import type {
   Status,
   StatusId,
   Unit,
+  WeaponDef,
   Zone,
 } from './types';
 
@@ -181,6 +182,7 @@ export class Battle {
     if (unit.mana < skill.manaCost) return 'Не хватает маны';
     if ((unit.cooldowns[skillId] ?? 0) > 0) return `Перезарядка: ${unit.cooldowns[skillId]}`;
     if (this.hpCost(unit, skill) >= unit.hp) return 'Не хватает здоровья';
+    if (skill.needsMeleeWeapon && !this.meleeWeapon(unit)) return 'Нужно оружие ближнего боя';
     return null;
   }
 
@@ -308,11 +310,24 @@ export class Battle {
     if (route.cost > unit.mp) return fail('Не хватает ОП');
 
     const events: BattleEvent[] = [];
-    const walked: Pos[] = [];
-    const deferred: BattleEvent[] = [];
+    let walked: Pos[] = [];
+    let deferred: BattleEvent[] = [];
+    // Путь показывается отрезками: удар Бдительности прерывает анимацию шага.
+    const flush = () => {
+      if (walked.length) events.push({ type: 'move', unitId: unit.id, path: walked });
+      events.push(...deferred);
+      walked = [];
+      deferred = [];
+    };
     for (const step of route.path) {
       unit.mp -= this.stepCost(unit, unit.pos);
       unit.facing = dirTowards(unit.pos, step);
+      const watchers = this.vigilantWatchers(unit, step);
+      if (watchers.length) {
+        flush();
+        for (const w of watchers) if (unit.alive) this.vigilanceStrike(w, unit, events);
+        if (!unit.alive) break;
+      }
       unit.pos = step;
       walked.push(step);
       const bleed = this.statusValue(unit, 'bleed');
@@ -320,7 +335,7 @@ export class Battle {
       this.enterCell(unit, deferred);
       if (!unit.alive) break;
     }
-    events.push({ type: 'move', unitId: unit.id, path: walked }, ...deferred);
+    flush();
     this.updateResult(events);
     return { ok: true, events };
   }
@@ -559,6 +574,7 @@ export class Battle {
     unit.mp = Math.max(0, unit.baseMp + this.statusValue(unit, 'haste') - this.statusValue(unit, 'slow'));
     unit.weaponAttacksThisTurn = 0;
     unit.focusedThisTurn = false;
+    unit.vigilanceUsed = false;
 
     const burn = this.statusValue(unit, 'burn');
     if (burn > 0) this.dealDamage(unit, { attacker: null, from: null, base: burn, damageType: 'fire', label: 'Горение' }, events);
@@ -584,6 +600,68 @@ export class Battle {
 
   private zonesAt(p: Pos): Zone[] {
     return this.zones.filter((z) => z.cells.some((c) => samePos(c, p)));
+  }
+
+  /** Оружие, которым можно бить соседнюю клетку здесь и сейчас. */
+  private meleeWeapon(unit: Unit): WeaponDef | null {
+    const w = unit.weapon;
+    if (!w || w.range[0] > 1) return null;
+    if (w.technology && this.location === 'wormhole') return null;
+    return w;
+  }
+
+  private isVigilant(u: Unit): boolean {
+    if (u.vigilant) return true;
+    return this.statusValue(u, 'vigilance') > 0 && !!this.meleeWeapon(u);
+  }
+
+  /** Враги с Бдительностью, от которых юнит отрывается этим шагом (был рядом — станет не рядом). */
+  private vigilantWatchers(unit: Unit, next: Pos): Unit[] {
+    return this.units.filter(
+      (w) =>
+        w.alive &&
+        w.team !== unit.team &&
+        !w.vigilanceUsed &&
+        distance(w.pos, unit.pos) === 1 &&
+        distance(w.pos, next) > 1 &&
+        this.isVigilant(w),
+    );
+  }
+
+  /** Бесплатный удар по отступающему. Он уже развернулся к выходу, так что это часто удар в спину. */
+  private vigilanceStrike(watcher: Unit, target: Unit, events: BattleEvent[]) {
+    watcher.vigilanceUsed = true;
+    watcher.facing = dirTowards(watcher.pos, target.pos);
+    events.push({ type: 'face', unitId: watcher.id, facing: watcher.facing });
+    events.push({ type: 'cast', unitId: watcher.id, skillId: 'weapon', target: { ...target.pos } });
+    events.push({ type: 'log', text: `Бдительность: ${watcher.name} бьёт отступающего` });
+    const w = this.meleeWeapon(watcher);
+    if (w) {
+      this.dealDamage(
+        target,
+        {
+          attacker: watcher,
+          from: watcher.pos,
+          base: this.rng.int(w.min, w.max),
+          damageType: 'physical',
+          scaling: w.scaling,
+          isWeapon: true,
+          critBonus: w.critBonus,
+          label: 'Бдительность',
+        },
+        events,
+      );
+      return;
+    }
+    // Монстр бьёт своим первым умением ближнего боя.
+    const skill = watcher.skills.map((id) => this.skills[id]).find((s) => s && s.range[0] <= 1);
+    const dmg = skill?.effects.find((e) => e.type === 'damage');
+    if (!dmg || dmg.type !== 'damage') return;
+    this.dealDamage(
+      target,
+      { attacker: watcher, from: watcher.pos, base: this.rng.int(dmg.min, dmg.max), damageType: dmg.damageType, label: 'Бдительность' },
+      events,
+    );
   }
 
   /** Эффекты при входе на клетку: горящая земля. */

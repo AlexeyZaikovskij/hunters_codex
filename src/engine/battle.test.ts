@@ -79,6 +79,42 @@ describe('Battle', () => {
     expect(hit[1].type === 'damage' && hit[1].amount).toBe(4);
   });
 
+  it('vigilant monster strikes a hero who retreats, once per round', () => {
+    const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 2, y: 2 });
+    const guard = createMonster('bone_guard', 'm1', { x: 3, y: 2 });
+    guard.initiative = 0;
+    const battle = setup([hero, guard]);
+    // Отрыв от стража — удар Бдительности.
+    let res = battle.move('hero', { x: 1, y: 2 });
+    expect(res.events.some((e) => e.type === 'damage' && e.unitId === 'hero')).toBe(true);
+    expect(guard.vigilanceUsed).toBe(true);
+    // Вернуться и снова отойти в том же раунде — второго удара нет.
+    hero.mp = 10;
+    battle.move('hero', { x: 2, y: 2 });
+    const hp = hero.hp;
+    res = battle.move('hero', { x: 1, y: 2 });
+    expect(res.ok).toBe(true);
+    expect(hero.hp).toBe(hp);
+  });
+
+  it('hero vigilance needs a melee weapon and punishes retreating enemies', () => {
+    const archer = createHero('fire', WEAPONS_BY_ID.bow, { x: 0, y: 0 }, ['energy_armor', 'dash', 'vigilance']);
+    expect(setup([archer, createMonster('gnawer', 'm1', { x: 5, y: 5 })]).skillError(archer, 'vigilance')).toBe(
+      'Нужно оружие ближнего боя',
+    );
+
+    const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 2, y: 2 }, ['energy_armor', 'dash', 'vigilance']);
+    const mob = createMonster('gnawer', 'm1', { x: 3, y: 2 });
+    mob.initiative = 0;
+    const battle = setup([hero, mob]);
+    expect(battle.useSkill('hero', 'vigilance', hero.pos).ok).toBe(true);
+    battle.endTurn();
+    const hpBefore = mob.hp;
+    expect(battle.current.id).toBe('m1');
+    battle.move('m1', { x: 5, y: 2 });
+    expect(mob.hp).toBeLessThan(hpBefore);
+  });
+
   it('obstacles block line of sight', () => {
     const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 0, y: 0 });
     const mob = createMonster('gnawer', 'm1', { x: 4, y: 0 });

@@ -17,6 +17,8 @@ export interface SessionSetup {
   affinity: Affinity;
   weapon: WeaponDef;
   location: Location;
+  /** Выбранные умения Усиления тела (3 слота). */
+  bodySkills: string[];
 }
 
 type Player = (events: BattleEvent[]) => Promise<void>;
@@ -37,7 +39,7 @@ export class BattleSession {
   constructor(readonly setup: SessionSetup) {
     const { map } = setup;
     const units: Unit[] = [
-      createHero(setup.affinity, setup.weapon, map.heroStart),
+      createHero(setup.affinity, setup.weapon, map.heroStart, setup.bodySkills),
       ...map.monsters.map((m, i) => createMonster(m.type, `m${i + 1}`, m.pos)),
     ];
     this.battle = new Battle({

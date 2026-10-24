@@ -15,6 +15,7 @@ const STATUS_NAMES: Record<StatusId, string> = {
   fireBoost: 'Ярость пламени',
   shield: 'Щит',
   weaponBoost: 'Усиленный удар',
+  vigilance: 'Бдительность',
 };
 
 const STATUS_HINT: Record<StatusId, (v: number) => string> = {
@@ -27,6 +28,7 @@ const STATUS_HINT: Record<StatusId, (v: number) => string> = {
   fireBoost: (v) => `+${v}% к урону огнём`,
   shield: (v) => `поглотит ${v} урона`,
   weaponBoost: (v) => `+${v}% к следующему удару`,
+  vigilance: () => 'бьёт отступающих с соседней клетки',
 };
 
 const RESIST_NAMES: Record<string, string> = {
@@ -76,6 +78,11 @@ function UnitCard({ unit, title }: { unit: Unit; title?: string }) {
         </span>
         {unit.name}
         {unit.tags.includes('undead') && <span className="tag">нежить</span>}
+        {unit.vigilant && (
+          <span className="tag" title="Бьёт того, кто отступает с соседней клетки (раз за раунд)">
+            бдительный
+          </span>
+        )}
       </div>
       <Bar value={unit.hp} max={unit.maxHp} kind="hp" />
       {unit.maxMana > 0 && <Bar value={unit.mana} max={unit.maxMana} kind="mana" />}

@@ -346,6 +346,21 @@ const body: SkillDef[] = [
     target: 'self',
     effects: [{ type: 'status', status: 'weaponBoost', duration: 1, value: 40 }],
   },
+  {
+    id: 'vigilance',
+    name: 'Бдительность',
+    school: 'body',
+    description:
+      'До конца следующего хода: враг, который отступает с соседней клетки, получает удар оружием (раз за раунд). Только с оружием ближнего боя.',
+    apCost: 2,
+    manaCost: 10,
+    range: [0, 0],
+    needsLos: false,
+    target: 'self',
+    cooldown: 3,
+    needsMeleeWeapon: true,
+    effects: [{ type: 'status', status: 'vigilance', duration: 2, value: 1 }],
+  },
 ];
 
 const monster: SkillDef[] = [

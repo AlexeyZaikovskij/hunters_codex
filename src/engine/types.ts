@@ -32,7 +32,8 @@ export type StatusId =
   | 'damageBoost' // +% ко всему урону
   | 'fireBoost' // +% к урону огнём
   | 'shield' // поглощает урон
-  | 'weaponBoost'; // +% к следующему удару оружием
+  | 'weaponBoost' // +% к следующему удару оружием
+  | 'vigilance'; // бьёт врага, который отступает с соседней клетки
 
 export interface Status {
   id: StatusId;
@@ -91,6 +92,8 @@ export interface SkillDef {
   range: [number, number];
   /** Цель должна быть на одной линии (строка или столбец) с заклинателем. */
   line?: boolean;
+  /** Работает только с оружием, которое бьёт соседнюю клетку. */
+  needsMeleeWeapon?: boolean;
   needsLos: boolean;
   target: TargetKind;
   area?: AreaDef;
@@ -148,6 +151,10 @@ export interface Unit {
   cooldowns: Record<string, number>;
   weaponAttacksThisTurn: number;
   focusedThisTurn: boolean;
+  /** Врождённая Бдительность (у некоторых монстров) — без статуса. */
+  vigilant?: boolean;
+  /** Удар Бдительности уже потрачен до начала своего следующего хода. */
+  vigilanceUsed: boolean;
   alive: boolean;
 }
 
