@@ -8,6 +8,9 @@ import { Rng } from '../engine/rng';
 import { SHEETS, TILESETS, UNIT_SPRITES, type SheetId, type SpriteRef } from '../data/sprites';
 import dungeonSheetUrl from '../assets/kenney/tiny-dungeon.png';
 import cavesSheetUrl from '../assets/kenney/roguelike-caves.png';
+import { getArtStyle } from './art';
+import { paintBoard } from './painted';
+import { UNIT_ART, svgDataUrl } from './painted-units';
 
 // Отрисовка поля боя. Логики боя здесь нет: сцена только показывает состояние и проигрывает события.
 
@@ -19,6 +22,7 @@ const UNIT_SCALE = 4;
 
 const SHEET_URLS: Record<SheetId, string> = { dungeon: dungeonSheetUrl, caves: cavesSheetUrl };
 const sheetKey = (id: SheetId) => `sheet:${id}`;
+const artKey = (kind: string) => `art:${kind}`;
 
 const COLORS = {
   reach: 0x3fbf7f,
@@ -84,6 +88,8 @@ export class BattleScene extends Phaser.Scene {
   /** Подписи прогноза урона над целями; пересоздаются при каждой перерисовке подсветки. */
   private previewLayer!: Phaser.GameObjects.Container;
   private unsubscribe?: () => void;
+  /** Графика выбирается на экране настройки и не меняется посреди боя. */
+  private art = getArtStyle();
 
   constructor() {
     super('battle');
@@ -91,6 +97,7 @@ export class BattleScene extends Phaser.Scene {
 
   init(data: { session: BattleSession }) {
     this.session = data.session;
+    this.art = getArtStyle();
   }
 
   preload() {
@@ -98,6 +105,8 @@ export class BattleScene extends Phaser.Scene {
       this.load.spritesheet(sheetKey(id), SHEET_URLS[id], { frameWidth: TILE, frameHeight: TILE, spacing: def.spacing });
     for (const [name, body] of Object.entries(ICONS))
       this.load.svg(iconKey(name), iconDataUrl(body), { width: ICON_TEXTURE_SIZE, height: ICON_TEXTURE_SIZE });
+    if (this.art === 'painted')
+      for (const [kind, art] of Object.entries(UNIT_ART)) this.load.svg(artKey(kind), svgDataUrl(art), { width: 128, height: 128 });
   }
 
   create() {
@@ -142,6 +151,13 @@ export class BattleScene extends Phaser.Scene {
   private drawBoard() {
     const { grid } = this.session.battle;
     const { map } = this.session.setup;
+    if (this.art === 'painted') {
+      const canvas = this.textures.createCanvas('board', grid.width * CELL, grid.height * CELL)!;
+      paintBoard(canvas.getContext(), grid, map.style ?? 'ruins', map.seed ?? 1, CELL);
+      canvas.refresh();
+      this.add.image(0, 0, 'board').setOrigin(0);
+      return;
+    }
     const set = TILESETS[map.style ?? 'ruins'];
     // Узор пола зависит от зерна карты: одна и та же Червоточина всегда выглядит одинаково.
     const rng = new Rng(map.seed ?? 1);
@@ -167,8 +183,10 @@ export class BattleScene extends Phaser.Scene {
   // ───────────── Юниты ─────────────
 
   private createUnitView(u: Unit) {
+    if (this.art === 'painted' && u.kind && UNIT_ART[u.kind])
+      return this.createSpriteView(u, (s) => s.image(0, -12, artKey(u.kind!)).setDisplaySize(80, 80), -46);
     const ref = u.kind ? UNIT_SPRITES[u.kind] : undefined;
-    if (ref) return this.createSpriteView(u, ref);
+    if (ref) return this.createSpriteView(u, (s) => s.image(0, -4, sheetKey(ref.sheet), ref.frame).setScale(UNIT_SCALE));
     const { x, y } = center(u.pos);
     const ring = this.add.circle(0, 0, 25).setStrokeStyle(3, COLORS.current).setVisible(false);
     const shadow = this.add.ellipse(0, 16, 40, 12, 0x000000, 0.4);
@@ -194,17 +212,21 @@ export class BattleScene extends Phaser.Scene {
     this.setFacing(view, u.facing);
   }
 
-  /** Пиксельный персонаж: овал команды под ногами, спрайт, полоски здоровья и щита сверху. */
-  private createSpriteView(u: Unit, ref: SpriteRef) {
+  /** Персонаж-картинка: овал команды под ногами, спрайт, полоски здоровья и щита сверху. */
+  private createSpriteView(
+    u: Unit,
+    makeSprite: (add: Phaser.GameObjects.GameObjectFactory) => Phaser.GameObjects.Image,
+    barsY = -36,
+  ) {
     const { x, y } = center(u.pos);
     const teamColor = u.team === 'player' ? COLORS.player : COLORS.enemy;
     const ring = this.add.ellipse(0, 22, 58, 22).setStrokeStyle(3, COLORS.current).setVisible(false);
     const base = this.add.ellipse(0, 22, 50, 16, teamColor, 0.35).setStrokeStyle(2, teamColor, 0.9);
-    const sprite = this.add.image(0, -4, sheetKey(ref.sheet), ref.frame).setScale(UNIT_SCALE);
+    const sprite = makeSprite(this.add);
     const facing = this.add.triangle(0, 0, 0, -5, 0, 5, 8, 0, teamColor).setOrigin(0, 0.5);
-    const hpBack = this.add.rectangle(-20, -36, 40, 6, 0x000000, 0.7).setOrigin(0, 0.5);
-    const hpBar = this.add.rectangle(-20, -36, 40, 6, u.team === 'player' ? 0x5be38f : 0xff5d5d).setOrigin(0, 0.5);
-    const shieldBar = this.add.rectangle(-20, -41, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
+    const hpBack = this.add.rectangle(-20, barsY, 40, 6, 0x000000, 0.7).setOrigin(0, 0.5);
+    const hpBar = this.add.rectangle(-20, barsY, 40, 6, u.team === 'player' ? 0x5be38f : 0xff5d5d).setOrigin(0, 0.5);
+    const shieldBar = this.add.rectangle(-20, barsY - 5, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
     const container = this.add.container(x, y, [ring, base, facing, sprite, hpBack, hpBar, shieldBar]);
     container.setDepth(10 + u.pos.y);
     const flash = (on: boolean) => (on ? sprite.setTintFill(0xffffff) : sprite.clearTint());
@@ -326,7 +348,7 @@ export class BattleScene extends Phaser.Scene {
       const text = p.kind === 'heal' ? `+${value}` : `−${value}${p.lethal === 'sure' ? ' ☠' : p.lethal === 'maybe' ? ' ☠?' : ''}`;
       const c = center(u.pos);
       const label = this.add
-        .text(c.x, c.y - CELL / 2 - 14, text, {
+        .text(c.x, c.y - CELL / 2 - (this.art === 'painted' ? 26 : 14), text, {
           fontFamily: 'Rubik, sans-serif',
           fontSize: '15px',
           fontStyle: 'bold',

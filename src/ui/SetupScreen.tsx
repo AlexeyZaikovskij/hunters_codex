@@ -8,6 +8,7 @@ import { Icon } from './Icon';
 import { generateWormhole, randomSeed, type DangerClass } from '../data/mapgen';
 import { BODY_SLOTS, DEFAULT_BODY_SKILLS } from '../data/units';
 import type { Location } from '../engine/types';
+import { ART_NAMES, getArtStyle, setArtStyle, type ArtStyle } from '../game/art';
 
 const AFFINITIES: { id: Affinity; name: string; tagline: string }[] = [
   { id: 'fire', name: 'Огонь', tagline: 'Урон по площади и горение. Всё решается громко.' },
@@ -27,6 +28,11 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
   const [dangerClass, setDangerClass] = useState<DangerClass>(initial?.map.dangerClass ?? 'E');
   // Пустое поле — новая случайная Червоточина; число — повторить конкретную.
   const [seedText, setSeedText] = useState('');
+  const [art, setArt] = useState<ArtStyle>(getArtStyle());
+  const chooseArt = (a: ArtStyle) => {
+    setArt(a);
+    setArtStyle(a);
+  };
   const toggleBody = (id: string) =>
     setBodySkills((cur) =>
       cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < BODY_SLOTS ? [...cur, id] : cur,
@@ -187,6 +193,23 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
             : dangerClass === 'E'
               ? 'Класс E: 3 монстра. Поле и состав каждый раз новые: пещера, руины или пустошь.'
               : 'Класс D: 4–5 монстров. Для опытных Одарённых — или для смелых.'}
+        </p>
+      </section>
+
+      <section>
+        <h2>Графика поля</h2>
+        <div className="toggle">
+          {(Object.keys(ART_NAMES) as ArtStyle[]).map((a) => (
+            <button key={a} className={art === a ? 'selected' : ''} onClick={() => chooseArt(a)}>
+              {ART_NAMES[a]}
+            </button>
+          ))}
+        </div>
+        <p className="hint">
+          {art === 'pixel'
+            ? 'Пиксель-арт Kenney: готовые тайлы и персонажи.'
+            : 'Нарисовано кодом: фактурный пол, объёмные камни, векторные фигурки.'}{' '}
+          Для сравнения запустите одно и то же зерно в обоих вариантах.
         </p>
       </section>
 
