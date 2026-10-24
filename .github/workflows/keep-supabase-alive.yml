@@ -1,0 +1,19 @@
+name: Keep Supabase project alive
+
+# Бесплатный Supabase ставит проект на паузу примерно через 7 дней без запросов к базе.
+# Раз в день делаем один лёгкий запрос, чтобы этого не случилось, даже если в игру никто не заходил.
+on:
+  schedule:
+    - cron: '23 6 * * *' # каждый день в 06:23 UTC
+  workflow_dispatch: {} # ручной запуск из вкладки Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping profiles table
+        # Publishable (anon) key публичный по дизайну: он и так зашит в клиентский бандл игры.
+        run: |
+          curl -sf "https://abbyelcjdhmwchvtrhfl.supabase.co/rest/v1/profiles?select=id&limit=1" \
+            -H "apikey: sb_publishable_QBj-fdJc20FV6ZmUX9QJRA_K8ccsK_6" \
+            -o /dev/null -w "HTTP %{http_code}\n"
