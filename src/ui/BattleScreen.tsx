@@ -50,8 +50,10 @@ function PreviewBlock({ p, target }: { p: ActionPreview; target: Unit }) {
         {p.lethal === 'maybe' && <span className="tag kill">может добить</span>}
       </div>
       <div className="preview-sub">
-        {range(p.min, p.max)} урона{p.damageType && DAMAGE_NAMES[p.damageType] ? ` ${DAMAGE_NAMES[p.damageType]}` : ''} · осталось{' '}
-        {target.hp}
+        {p.max > 0
+          ? `${range(p.min, p.max)} урона${p.damageType && DAMAGE_NAMES[p.damageType] ? ` ${DAMAGE_NAMES[p.damageType]}` : ''}`
+          : 'в него врежутся'}{' '}
+        · осталось {target.hp}
       </div>
       {notes.length > 0 && <div className="preview-notes">{notes.join(' · ')}</div>}
     </div>

@@ -79,6 +79,25 @@ describe('Battle', () => {
     expect(hit[1].type === 'damage' && hit[1].amount).toBe(4);
   });
 
+  it('a unit hit by a pushed unit takes the same collision damage, and the preview shows it', () => {
+    const hero = createHero('fire', WEAPONS_BY_ID.hammer, { x: 1, y: 2 });
+    const mob = createMonster('gnawer', 'm1', { x: 2, y: 2 });
+    const behind = createMonster('gnawer', 'm2', { x: 3, y: 2 });
+    mob.initiative = 0;
+    behind.initiative = 0;
+    const battle = setup([hero, mob, behind]);
+    const preview = battle.previewAction(hero, { kind: 'weapon' }, mob.pos);
+    expect(preview.map((p) => p.unitId)).toEqual(['m1', 'm2']);
+    expect(preview[1].collision).toBe(preview[0].collision);
+    expect(preview[1].hpLossMin).toBe(4);
+
+    const res = battle.weaponAttack('hero', mob.pos);
+    expect(res.ok).toBe(true);
+    const behindHits = res.events.filter((e) => e.type === 'damage' && e.unitId === 'm2');
+    expect(behindHits).toHaveLength(1);
+    expect(behindHits[0].type === 'damage' && behindHits[0].amount).toBe(4);
+  });
+
   it('vigilant monster strikes a hero who retreats, once per round', () => {
     const hero = createHero('fire', WEAPONS_BY_ID.sword, { x: 2, y: 2 });
     const guard = createMonster('bone_guard', 'm1', { x: 3, y: 2 });

@@ -99,6 +99,8 @@ interface DamageOptions {
   label?: string;
 }
 
+type CollisionHit = Pick<DamageOptions, 'base' | 'damageType' | 'pure'>;
+
 const fail = (error: string): ActionResult => ({ ok: false, error, events: [] });
 
 export class Battle {
@@ -633,14 +635,31 @@ export class Battle {
   }
 
   /** Сколько клеток толчка цель не пройдёт (столкновение). Цель не двигается. */
-  private blockedPushCells(target: Unit, dir: Dir, distanceCells: number): number {
+  /** Чем закончится отталкивание: сколько клеток не пройдено и в кого цель врежется. */
+  private pushOutcome(target: Unit, dir: Dir, distanceCells: number): { blocked: number; victim: Unit | null } {
     let p = target.pos;
     for (let moved = 0; moved < distanceCells; moved++) {
       const next = add(p, DIRS[dir]);
-      if (!this.isFree(next)) return distanceCells - moved;
+      if (!this.isFree(next)) return { blocked: distanceCells - moved, victim: this.unitAt(next) ?? null };
       p = next;
     }
-    return 0;
+    return { blocked: 0, victim: null };
+  }
+
+  /** Урон столкновения до сопротивления. Магия — чистый урон Пространством от Интеллекта, оружие — физический от Силы. */
+  private collisionBase(source: Unit, blocked: number, byWeapon: boolean): CollisionHit {
+    const perCell = byWeapon ? RULES.weaponCollisionDamagePerCell : RULES.collisionDamagePerCell;
+    const stat = byWeapon ? source.stats.strength : source.stats.intellect;
+    return {
+      base: Math.round(perCell * blocked * (1 + stat / 100)),
+      damageType: byWeapon ? 'physical' : 'space',
+      pure: !byWeapon,
+    };
+  }
+
+  /** Урон столкновения по конкретному юниту — так же, как его посчитает dealDamage. */
+  private collisionFor(unit: Unit, c: CollisionHit): number {
+    return Math.round(c.base * this.damageFactor(unit, { attacker: null, from: null, damageType: c.damageType, pure: c.pure }).factor);
   }
 
   /** Урон действия «на бумаге»: с характеристиками и усилениями героя, без учёта цели. */
@@ -675,19 +694,41 @@ export class Battle {
 
   /** Прогноз по каждой цели, если применить действие по клетке. Бой не меняется. */
   previewAction(unit: Unit, action: ActionRef, cell: Pos): ActionPreview[] {
-    const out: ActionPreview[] = [];
-    const finish = (target: Unit, p: Omit<ActionPreview, 'unitId' | 'hpLossMin' | 'hpLossMax' | 'lethal'>) => {
-      const hpLossMin = Math.max(0, p.min + p.collision - p.shield);
-      const hpLossMax = Math.max(0, p.max + p.collision - p.shield);
-      const lethal = p.kind === 'heal' ? 'no' : hpLossMin >= target.hp ? 'sure' : hpLossMax >= target.hp ? 'maybe' : 'no';
-      out.push({ unitId: target.id, ...p, hpLossMin, hpLossMax, lethal });
-    };
+    type Raw = Omit<ActionPreview, 'unitId' | 'hpLossMin' | 'hpLossMax' | 'lethal'>;
+    const raw: { target: Unit; p: Raw }[] = [];
+    const finish = (target: Unit, p: Raw) => raw.push({ target, p });
     const shieldOf = (t: Unit) => t.statuses.find((s) => s.id === 'shield')?.value ?? 0;
+    // Тот, в кого врезается отброшенная цель, получает такой же урон столкновения.
+    const hitVictim = (victim: Unit | null, c: CollisionHit) => {
+      if (!victim) return;
+      const amount = this.collisionFor(victim, c);
+      const existing = raw.find((r) => r.target === victim && r.p.kind === 'damage');
+      if (existing) existing.p.collision += amount;
+      else
+        finish(victim, {
+          kind: 'damage',
+          damageType: c.damageType,
+          min: 0,
+          max: 0,
+          collision: amount,
+          shield: shieldOf(victim),
+          side: 'front',
+          resist: 0,
+          critChance: 0,
+        });
+    };
+    const result = (): ActionPreview[] =>
+      raw.map(({ target, p }) => {
+        const hpLossMin = Math.max(0, p.min + p.collision - p.shield);
+        const hpLossMax = Math.max(0, p.max + p.collision - p.shield);
+        const lethal = p.kind === 'heal' ? 'no' : hpLossMin >= target.hp ? 'sure' : hpLossMax >= target.hp ? 'maybe' : 'no';
+        return { unitId: target.id, ...p, hpLossMin, hpLossMax, lethal };
+      });
 
     if (action.kind === 'weapon') {
       const w = unit.weapon;
       const target = this.unitAt(cell);
-      if (!w || !target || !this.isValidWeaponTarget(unit, cell)) return out;
+      if (!w || !target || !this.isValidWeaponTarget(unit, cell)) return [];
       const f = this.damageFactor(target, {
         attacker: unit,
         from: unit.pos,
@@ -697,10 +738,14 @@ export class Battle {
         critBonus: w.critBonus,
       });
       let collision = 0;
+      let victim: { victim: Unit | null; c: CollisionHit } | null = null;
       if (w.push) {
-        const blocked = this.blockedPushCells(target, dirTowards(unit.pos, target.pos), w.push);
-        const base = RULES.weaponCollisionDamagePerCell * blocked * (1 + unit.stats.strength / 100);
-        collision = Math.round(base * this.damageFactor(target, { attacker: null, from: null, damageType: 'physical' }).factor);
+        const o = this.pushOutcome(target, dirTowards(unit.pos, target.pos), w.push);
+        if (o.blocked > 0) {
+          const c = this.collisionBase(unit, o.blocked, true);
+          collision = this.collisionFor(target, c);
+          victim = { victim: o.victim, c };
+        }
       }
       finish(target, {
         kind: 'damage',
@@ -713,11 +758,13 @@ export class Battle {
         resist: f.resist,
         critChance: f.critChance,
       });
-      return out;
+      if (victim) hitVictim(victim.victim, victim.c);
+      return result();
     }
 
     const skill = this.skills[action.id];
-    if (!skill || !this.isValidSkillTarget(unit, skill, cell)) return out;
+    if (!skill || !this.isValidSkillTarget(unit, skill, cell)) return [];
+    const victims: { victim: Unit | null; c: CollisionHit }[] = [];
     for (const t of this.skillTargets(unit, skill, cell)) {
       for (const e of skill.effects) {
         if (e.type === 'damage') {
@@ -732,7 +779,12 @@ export class Battle {
           let collision = 0;
           if (push?.type === 'push') {
             const dir = lineDir(unit.pos, t.pos) ?? dirTowards(unit.pos, t.pos);
-            collision = Math.round(RULES.collisionDamagePerCell * this.blockedPushCells(t, dir, push.distance) * (1 + unit.stats.intellect / 100));
+            const o = this.pushOutcome(t, dir, push.distance);
+            if (o.blocked > 0) {
+              const c = this.collisionBase(unit, o.blocked, false);
+              collision = this.collisionFor(t, c);
+              victims.push({ victim: o.victim, c });
+            }
           }
           finish(t, {
             kind: 'damage',
@@ -761,7 +813,8 @@ export class Battle {
         }
       }
     }
-    return out;
+    for (const v of victims) hitVictim(v.victim, v.c);
+    return result();
   }
 
   /** Оружие, которым можно бить соседнюю клетку здесь и сейчас. */
@@ -874,16 +927,11 @@ export class Battle {
     const remaining = distanceCells - moved;
     if (remaining <= 0 || !target.alive) return;
 
-    // Столкновение: урон за каждую непройденную клетку. Магия — чистый урон Пространством от Интеллекта,
-    // оружие — физический от Силы (режется сопротивлением).
-    const perCell = byWeapon ? RULES.weaponCollisionDamagePerCell : RULES.collisionDamagePerCell;
-    const stat = byWeapon ? source.stats.strength : source.stats.intellect;
-    const damage = Math.round(perCell * remaining * (1 + stat / 100));
-    const damageType = byWeapon ? 'physical' : 'space';
-    this.dealDamage(target, { attacker: null, from: null, base: damage, damageType, pure: !byWeapon, label: 'Столкновение' }, events);
+    // Столкновение: урон за каждую непройденную клетку. Если цель врезалась в другого юнита, он получает столько же.
+    const hit: DamageOptions = { attacker: null, from: null, ...this.collisionBase(source, remaining, byWeapon), label: 'Столкновение' };
     const other = this.unitAt(add(target.pos, DIRS[dir]));
-    if (other)
-      this.dealDamage(other, { attacker: null, from: null, base: Math.round(damage / 2), damageType, pure: !byWeapon, label: 'Столкновение' }, events);
+    this.dealDamage(target, hit, events);
+    if (other) this.dealDamage(other, hit, events);
   }
 
   /**
