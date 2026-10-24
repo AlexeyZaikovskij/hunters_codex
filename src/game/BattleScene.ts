@@ -4,17 +4,23 @@ import type { BattleEvent, DamageType, Dir, Pos, Unit } from '../engine/types';
 import { SKILLS } from '../data/skills';
 import { ICONS } from '../data/icons';
 import { key, samePos } from '../engine/grid';
+import { Rng } from '../engine/rng';
+import { SHEETS, TILESETS, UNIT_SPRITES, type SheetId, type SpriteRef } from '../data/sprites';
+import dungeonSheetUrl from '../assets/kenney/tiny-dungeon.png';
+import cavesSheetUrl from '../assets/kenney/roguelike-caves.png';
 
 // Отрисовка поля боя. Логики боя здесь нет: сцена только показывает состояние и проигрывает события.
 
-export const CELL = 56;
+/** Тайлы 16×16 рисуются ровно в 4 раза крупнее — пиксели остаются чёткими. */
+const TILE = 16;
+export const CELL = TILE * 4;
+/** Персонажи чуть меньше клетки, чтобы над ними помещалась полоска здоровья. */
+const UNIT_SCALE = 4;
+
+const SHEET_URLS: Record<SheetId, string> = { dungeon: dungeonSheetUrl, caves: cavesSheetUrl };
+const sheetKey = (id: SheetId) => `sheet:${id}`;
 
 const COLORS = {
-  tileA: 0x1d2130,
-  tileB: 0x21263a,
-  gridLine: 0x2c3247,
-  obstacle: 0x3b4157,
-  obstacleTop: 0x4d5470,
   reach: 0x3fbf7f,
   path: 0x7cf0b2,
   range: 0x4f7bff,
@@ -49,11 +55,14 @@ const FACING_ANGLE: Record<Dir, number> = { right: 0, down: 90, left: 180, up: 2
 
 interface UnitView {
   container: Phaser.GameObjects.Container;
-  body: Phaser.GameObjects.Arc;
+  /** Белая вспышка при попадании. */
+  flash: (on: boolean) => void;
+  /** Спрайт смотрит влево или вправо; вверх/вниз показывает только треугольник. */
+  sprite?: Phaser.GameObjects.Image;
   facing: Phaser.GameObjects.Triangle;
   hpBar: Phaser.GameObjects.Rectangle;
   shieldBar: Phaser.GameObjects.Rectangle;
-  ring: Phaser.GameObjects.Arc;
+  ring: Phaser.GameObjects.Shape;
 }
 
 const center = (p: Pos) => ({ x: p.x * CELL + CELL / 2, y: p.y * CELL + CELL / 2 });
@@ -85,11 +94,15 @@ export class BattleScene extends Phaser.Scene {
   }
 
   preload() {
+    for (const [id, def] of Object.entries(SHEETS) as [SheetId, (typeof SHEETS)[SheetId]][])
+      this.load.spritesheet(sheetKey(id), SHEET_URLS[id], { frameWidth: TILE, frameHeight: TILE, spacing: def.spacing });
     for (const [name, body] of Object.entries(ICONS))
       this.load.svg(iconKey(name), iconDataUrl(body), { width: ICON_TEXTURE_SIZE, height: ICON_TEXTURE_SIZE });
   }
 
   create() {
+    for (const id of Object.keys(SHEETS) as SheetId[])
+      this.textures.get(sheetKey(id)).setFilter(Phaser.Textures.FilterMode.NEAREST);
     this.drawBoard();
     this.zonesLayer = this.add.graphics();
     this.overlay = this.add.graphics();
@@ -119,31 +132,43 @@ export class BattleScene extends Phaser.Scene {
 
   // ───────────── Статичное поле ─────────────
 
+  private tile(ref: SpriteRef, x: number, y: number) {
+    return this.add
+      .image(x * CELL, y * CELL, sheetKey(ref.sheet), ref.frame)
+      .setOrigin(0)
+      .setScale(CELL / TILE);
+  }
+
   private drawBoard() {
     const { grid } = this.session.battle;
-    const g = this.add.graphics();
+    const { map } = this.session.setup;
+    const set = TILESETS[map.style ?? 'ruins'];
+    // Узор пола зависит от зерна карты: одна и та же Червоточина всегда выглядит одинаково.
+    const rng = new Rng(map.seed ?? 1);
+    const pick = <T,>(list: T[]) => list[rng.int(0, list.length - 1)];
     for (let y = 0; y < grid.height; y++)
       for (let x = 0; x < grid.width; x++) {
-        g.fillStyle((x + y) % 2 ? COLORS.tileA : COLORS.tileB);
-        g.fillRect(x * CELL, y * CELL, CELL, CELL);
+        const p = { x, y };
+        const floor = this.tile(rng.chance(0.6) ? set.floor[0] : pick(set.floor), x, y);
+        if (set.floorTint) floor.setTint(set.floorTint);
+        if (grid.isObstacle(p)) this.tile(pick(set.obstacles), x, y);
+        else if (rng.chance(0.06)) this.tile(pick(set.decor), x, y).setAlpha(0.8);
       }
-    g.lineStyle(1, COLORS.gridLine, 0.6);
+    // Тонкая сетка и шахматное затемнение — чтобы клетки читались на пиксельном полу.
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.08);
+    for (let y = 0; y < grid.height; y++)
+      for (let x = 0; x < grid.width; x++) if ((x + y) % 2) g.fillRect(x * CELL, y * CELL, CELL, CELL);
+    g.lineStyle(1, 0x000000, 0.25);
     for (let x = 0; x <= grid.width; x++) g.lineBetween(x * CELL, 0, x * CELL, grid.height * CELL);
     for (let y = 0; y <= grid.height; y++) g.lineBetween(0, y * CELL, grid.width * CELL, y * CELL);
-    for (const k of grid.obstacles) {
-      const [x, y] = k.split(',').map(Number);
-      g.fillStyle(0x000000, 0.35);
-      g.fillRoundedRect(x * CELL + 5, y * CELL + 9, CELL - 8, CELL - 8, 6);
-      g.fillStyle(COLORS.obstacle);
-      g.fillRoundedRect(x * CELL + 4, y * CELL + 4, CELL - 8, CELL - 8, 6);
-      g.fillStyle(COLORS.obstacleTop);
-      g.fillRoundedRect(x * CELL + 8, y * CELL + 6, CELL - 16, CELL - 22, 4);
-    }
   }
 
   // ───────────── Юниты ─────────────
 
   private createUnitView(u: Unit) {
+    const ref = u.kind ? UNIT_SPRITES[u.kind] : undefined;
+    if (ref) return this.createSpriteView(u, ref);
     const { x, y } = center(u.pos);
     const ring = this.add.circle(0, 0, 25).setStrokeStyle(3, COLORS.current).setVisible(false);
     const shadow = this.add.ellipse(0, 16, 40, 12, 0x000000, 0.4);
@@ -163,13 +188,39 @@ export class BattleScene extends Phaser.Scene {
     const shieldBar = this.add.rectangle(-20, -36, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
     const container = this.add.container(x, y, [ring, shadow, team, body, shine, glyph, facing, hpBack, hpBar, shieldBar]);
     container.setDepth(10 + u.pos.y);
-    const view = { container, body, facing, hpBar, shieldBar, ring };
+    const flash = (on: boolean) => body.setFillStyle(on ? 0xffffff : u.color);
+    const view = { container, flash, facing, hpBar, shieldBar, ring };
+    this.views.set(u.id, view);
+    this.setFacing(view, u.facing);
+  }
+
+  /** Пиксельный персонаж: овал команды под ногами, спрайт, полоски здоровья и щита сверху. */
+  private createSpriteView(u: Unit, ref: SpriteRef) {
+    const { x, y } = center(u.pos);
+    const teamColor = u.team === 'player' ? COLORS.player : COLORS.enemy;
+    const ring = this.add.ellipse(0, 22, 58, 22).setStrokeStyle(3, COLORS.current).setVisible(false);
+    const base = this.add.ellipse(0, 22, 50, 16, teamColor, 0.35).setStrokeStyle(2, teamColor, 0.9);
+    const sprite = this.add.image(0, -4, sheetKey(ref.sheet), ref.frame).setScale(UNIT_SCALE);
+    const facing = this.add.triangle(0, 0, 0, -5, 0, 5, 8, 0, teamColor).setOrigin(0, 0.5);
+    const hpBack = this.add.rectangle(-20, -36, 40, 6, 0x000000, 0.7).setOrigin(0, 0.5);
+    const hpBar = this.add.rectangle(-20, -36, 40, 6, u.team === 'player' ? 0x5be38f : 0xff5d5d).setOrigin(0, 0.5);
+    const shieldBar = this.add.rectangle(-20, -41, 0, 3, 0x9fd8ff).setOrigin(0, 0.5);
+    const container = this.add.container(x, y, [ring, base, facing, sprite, hpBack, hpBar, shieldBar]);
+    container.setDepth(10 + u.pos.y);
+    const flash = (on: boolean) => (on ? sprite.setTintFill(0xffffff) : sprite.clearTint());
+    const view = { container, flash, sprite, facing, hpBar, shieldBar, ring };
     this.views.set(u.id, view);
     this.setFacing(view, u.facing);
   }
 
   private setFacing(view: UnitView, dir: Dir) {
     const angle = Phaser.Math.DegToRad(FACING_ANGLE[dir]);
+    if (view.sprite) {
+      // Треугольник у ног, на краю овала команды.
+      view.facing.setPosition(Math.cos(angle) * 28, 22 + Math.sin(angle) * 11).setRotation(angle);
+      if (dir === 'left' || dir === 'right') view.sprite.setFlipX(dir === 'left');
+      return;
+    }
     view.facing.setPosition(Math.cos(angle) * 22, Math.sin(angle) * 22).setRotation(angle);
   }
 
@@ -275,7 +326,7 @@ export class BattleScene extends Phaser.Scene {
       const text = p.kind === 'heal' ? `+${value}` : `−${value}${p.lethal === 'sure' ? ' ☠' : p.lethal === 'maybe' ? ' ☠?' : ''}`;
       const c = center(u.pos);
       const label = this.add
-        .text(c.x, c.y - CELL / 2 - 4, text, {
+        .text(c.x, c.y - CELL / 2 - 14, text, {
           fontFamily: 'Rubik, sans-serif',
           fontSize: '15px',
           fontStyle: 'bold',
@@ -400,9 +451,9 @@ export class BattleScene extends Phaser.Scene {
           this.setHp(view, battle.unit(e.unitId), e.hp);
           if (e.absorbed > 0) this.float(e.unitId, `🛡${e.absorbed}`, '#9fd8ff');
           if (e.amount > 0 || e.absorbed === 0) this.float(e.unitId, `−${e.amount}${e.crit ? '!' : ''}`, DAMAGE_COLORS[e.damageType], e.crit);
-          view.body.setFillStyle(0xffffff);
+          view.flash(true);
           await this.wait(90);
-          view.body.setFillStyle(battle.unit(e.unitId).color);
+          view.flash(false);
           await this.wait(140);
           break;
         case 'heal':

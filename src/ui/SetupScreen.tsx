@@ -213,6 +213,11 @@ export function SetupScreen({ onStart, initial }: { onStart: (s: SessionSetup) =
         <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">
           CC BY 3.0
         </a>
+        . Пиксель-арт:{' '}
+        <a href="https://kenney.nl" target="_blank" rel="noreferrer">
+          Kenney
+        </a>{' '}
+        (CC0).
       </footer>
     </div>
   );

@@ -3,11 +3,11 @@
 
 import { Rng } from '../engine/rng';
 import type { Pos } from '../engine/types';
-import type { MapDef } from './maps';
+import type { MapDef, MapStyle } from './maps';
 import type { MONSTERS } from './units';
 
 export type DangerClass = 'E' | 'D';
-export type MapStyle = 'cave' | 'ruins' | 'open';
+export type { MapStyle };
 
 export const STYLE_NAMES: Record<MapStyle, string> = {
   cave: 'пещера',
@@ -87,6 +87,7 @@ function tryGenerate(rng: Rng, style: MapStyle, opts: GenOptions): MapDef | null
 
   return {
     name: `Червоточина класса ${opts.dangerClass}: ${STYLE_NAMES[style]}`,
+    style,
     width: SIZE,
     height: SIZE,
     obstacles: [...walls].map((s) => {

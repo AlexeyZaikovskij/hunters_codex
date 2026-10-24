@@ -133,6 +133,8 @@ export interface Unit {
   glyph: string;
   /** Иконка фишки на поле; без неё рисуется буква. */
   icon?: string;
+  /** Вид юнита для графики: 'hero' или ключ монстра. */
+  kind?: string;
   color: number;
   pos: Pos;
   facing: Dir;

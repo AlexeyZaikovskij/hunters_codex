@@ -1,8 +1,12 @@
 import type { Pos } from '../engine/types';
 import type { MONSTERS } from './units';
 
+export type MapStyle = 'cave' | 'ruins' | 'open';
+
 export interface MapDef {
   name: string;
+  /** Оформление поля (пол, камни); без стиля — руины. */
+  style?: MapStyle;
   width: number;
   height: number;
   obstacles: Pos[];
